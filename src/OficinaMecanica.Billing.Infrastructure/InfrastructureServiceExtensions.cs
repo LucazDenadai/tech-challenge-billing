@@ -5,6 +5,9 @@ using OficinaMecanica.Billing.Application.Ports.In;
 using OficinaMecanica.Billing.Application.Ports.Out;
 using OficinaMecanica.Billing.Application.UseCases.Mensageria;
 using OficinaMecanica.Billing.Application.UseCases.Orcamentos;
+using OficinaMecanica.Billing.Infrastructure.Adapters.In.Agendamento;
+using OficinaMecanica.Billing.Infrastructure.Adapters.In.Messaging;
+using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Messaging;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence.Repositories;
 
@@ -39,6 +42,31 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IOrcamentoParaPagamento>(sp => sp.GetRequiredService<ConsultarOrcamentosUseCase>());
         services.AddScoped<ProcessarMensagemSagaUseCase>();
 
+        var secaoExpiracao = configuration.GetSection(ExpiracaoOptions.Secao);
+        services.Configure<ExpiracaoOptions>(secaoExpiracao);
+        if ((secaoExpiracao.Get<ExpiracaoOptions>() ?? new ExpiracaoOptions()).ExpiracaoHabilitada)
+            services.AddHostedService<ExpiracaoOrcamentosHostedService>();
+
+        return services;
+    }
+
+    // Consumidor dos comandos da Saga e despachante da outbox (ADR-016, ADR-018). Desabilitado, nenhuma conexão é aberta.
+    public static IServiceCollection AddMensageria(this IServiceCollection services, IConfiguration configuration)
+    {
+        var secao = configuration.GetSection(RabbitMqOptions.Secao);
+        var opcoes = secao.Get<RabbitMqOptions>() ?? new RabbitMqOptions();
+        if (!opcoes.Enabled)
+            return services;
+
+        // Conexão autenticada: sem usuário e senha configurados o serviço não sobe (não usa guest/guest implícito).
+        if (string.IsNullOrWhiteSpace(opcoes.Username) || string.IsNullOrWhiteSpace(opcoes.Password))
+            throw new InvalidOperationException("RabbitMq:Username e RabbitMq:Password são obrigatórios quando RabbitMq:Enabled=true.");
+
+        services.Configure<RabbitMqOptions>(secao);
+        services.AddSingleton<EstadoConsumidorSaga>();
+        services.AddHostedService<ConsumidorSagaHostedService>();
+        services.AddSingleton<PublicadorRabbitMq>();
+        services.AddHostedService<DespachanteOutboxHostedService>();
         return services;
     }
 }
