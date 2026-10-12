@@ -1,0 +1,35 @@
+# Dependências locais do serviço Billing (ADR-016). As portas do host são deslocadas para
+# não colidir com o Compose de Operações quando os dois rodam na mesma máquina.
+#
+#   docker compose up -d
+#
+# Depois rode a API pelo dotnet com as variáveis do README (seção Executar).
+# O fluxo integrado da Saga, com um broker só para os três serviços, fica no CARD-40.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: oficina_billing
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-billing:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: billing
+      RABBITMQ_DEFAULT_PASS: billing-local
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "4319:4318"
+      - "16687:16686"
+
+volumes:
+  postgres-billing:
