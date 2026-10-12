@@ -1,0 +1,607 @@
+# Cópia de tech-challenge-docs/contratos/asyncapi-saga-os.yaml (fonte da verdade, ADR-018).
+# Usada pelos testes de contrato; atualizar junto com a spec original, sem editar aqui.
+asyncapi: 3.0.0
+info:
+  title: Saga da OS — Fase 4
+  version: 1.0.0
+  description: |
+    Contratos assíncronos (comandos e eventos) da Saga orquestrada pelo serviço OS.
+    Fonte das decisões: ADR-017 (fluxo, estados, compensações) e ADR-018 (formato e convenções).
+
+    Convenções de broker (ADR-018):
+    - Cada canal é uma exchange RabbitMQ `fanout` durável cujo nome é o `address` do canal.
+    - Cada consumidor declara a própria fila `<servico>.<address>` e a DLQ `<servico>.<address>.dlq`.
+    - Cada operação `send` identifica o produtor; o consumidor está na descrição do canal.
+    - Mudança incompatível cria nova versão (`.v2`) em canal próprio; a versão anterior convive até migrar os consumidores.
+
+servers:
+  rabbitmq:
+    host: rabbitmq:5672
+    protocol: amqp
+    description: RabbitMQ da plataforma compartilhada (ADR-001, ADR-015). Host local/cluster definido por configuração de cada serviço.
+
+defaultContentType: application/json
+
+channels:
+  diagnosisRequested:
+    address: saga-os.diagnosis-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Operações."
+    messages:
+      DiagnosisRequested: { $ref: '#/components/messages/DiagnosisRequested' }
+  diagnosisCompleted:
+    address: saga-os.diagnosis-completed.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      DiagnosisCompleted: { $ref: '#/components/messages/DiagnosisCompleted' }
+  diagnosisRejected:
+    address: saga-os.diagnosis-rejected.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      DiagnosisRejected: { $ref: '#/components/messages/DiagnosisRejected' }
+  quoteRequested:
+    address: saga-os.quote-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Billing."
+    messages:
+      QuoteRequested: { $ref: '#/components/messages/QuoteRequested' }
+  quoteReady:
+    address: saga-os.quote-ready.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      QuoteReady: { $ref: '#/components/messages/QuoteReady' }
+  quoteRejected:
+    address: saga-os.quote-rejected.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      QuoteRejected: { $ref: '#/components/messages/QuoteRejected' }
+  quoteApproved:
+    address: saga-os.quote-approved.v1
+    description: "Evento. Produtor: Billing (após aprovação via REST). Consumidor: OS."
+    messages:
+      QuoteApproved: { $ref: '#/components/messages/QuoteApproved' }
+  quoteDeclined:
+    address: saga-os.quote-declined.v1
+    description: "Evento. Produtor: Billing (após recusa via REST). Consumidor: OS."
+    messages:
+      QuoteDeclined: { $ref: '#/components/messages/QuoteDeclined' }
+  quoteExpired:
+    address: saga-os.quote-expired.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      QuoteExpired: { $ref: '#/components/messages/QuoteExpired' }
+  inventoryReservationRequested:
+    address: saga-os.inventory-reservation-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Operações."
+    messages:
+      InventoryReservationRequested: { $ref: '#/components/messages/InventoryReservationRequested' }
+  inventoryReserved:
+    address: saga-os.inventory-reserved.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      InventoryReserved: { $ref: '#/components/messages/InventoryReserved' }
+  inventoryReservationRejected:
+    address: saga-os.inventory-reservation-rejected.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      InventoryReservationRejected: { $ref: '#/components/messages/InventoryReservationRejected' }
+  paymentCreationRequested:
+    address: saga-os.payment-creation-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Billing."
+    messages:
+      PaymentCreationRequested: { $ref: '#/components/messages/PaymentCreationRequested' }
+  paymentPending:
+    address: saga-os.payment-pending.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      PaymentPending: { $ref: '#/components/messages/PaymentPending' }
+  paymentApproved:
+    address: saga-os.payment-approved.v1
+    description: "Evento. Produtor: Billing (somente após reconciliar com o Mercado Pago). Consumidor: OS."
+    messages:
+      PaymentApproved: { $ref: '#/components/messages/PaymentApproved' }
+  paymentDeclined:
+    address: saga-os.payment-declined.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      PaymentDeclined: { $ref: '#/components/messages/PaymentDeclined' }
+  paymentOutcomeUnknown:
+    address: saga-os.payment-outcome-unknown.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS. Não é recusa: a Saga permanece em ReconcilingPayment."
+    messages:
+      PaymentOutcomeUnknown: { $ref: '#/components/messages/PaymentOutcomeUnknown' }
+  executionStartRequested:
+    address: saga-os.execution-start-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Operações."
+    messages:
+      ExecutionStartRequested: { $ref: '#/components/messages/ExecutionStartRequested' }
+  executionStarted:
+    address: saga-os.execution-started.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionStarted: { $ref: '#/components/messages/ExecutionStarted' }
+  executionStartRejected:
+    address: saga-os.execution-start-rejected.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionStartRejected: { $ref: '#/components/messages/ExecutionStartRejected' }
+  executionCompleted:
+    address: saga-os.execution-completed.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionCompleted: { $ref: '#/components/messages/ExecutionCompleted' }
+  executionFailed:
+    address: saga-os.execution-failed.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionFailed: { $ref: '#/components/messages/ExecutionFailed' }
+  inventoryReleaseRequested:
+    address: saga-os.inventory-release-requested.v1
+    description: "Comando de compensação. Produtor: OS. Consumidor: Operações."
+    messages:
+      InventoryReleaseRequested: { $ref: '#/components/messages/InventoryReleaseRequested' }
+  inventoryReleased:
+    address: saga-os.inventory-released.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      InventoryReleased: { $ref: '#/components/messages/InventoryReleased' }
+  paymentRefundRequested:
+    address: saga-os.payment-refund-requested.v1
+    description: "Comando de compensação. Produtor: OS. Consumidor: Billing."
+    messages:
+      PaymentRefundRequested: { $ref: '#/components/messages/PaymentRefundRequested' }
+  paymentRefunded:
+    address: saga-os.payment-refunded.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      PaymentRefunded: { $ref: '#/components/messages/PaymentRefunded' }
+  paymentRefundPending:
+    address: saga-os.payment-refund-pending.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS. Não terminal: a Saga não é declarada compensada."
+    messages:
+      PaymentRefundPending: { $ref: '#/components/messages/PaymentRefundPending' }
+  paymentRefundFailed:
+    address: saga-os.payment-refund-failed.v1
+    description: "Evento. Produtor: Billing. Consumidor: OS."
+    messages:
+      PaymentRefundFailed: { $ref: '#/components/messages/PaymentRefundFailed' }
+
+operations:
+  osSendDiagnosisRequested:
+    action: send
+    channel: { $ref: '#/channels/diagnosisRequested' }
+  operacoesSendDiagnosisCompleted:
+    action: send
+    channel: { $ref: '#/channels/diagnosisCompleted' }
+  operacoesSendDiagnosisRejected:
+    action: send
+    channel: { $ref: '#/channels/diagnosisRejected' }
+  osSendQuoteRequested:
+    action: send
+    channel: { $ref: '#/channels/quoteRequested' }
+  billingSendQuoteReady:
+    action: send
+    channel: { $ref: '#/channels/quoteReady' }
+  billingSendQuoteRejected:
+    action: send
+    channel: { $ref: '#/channels/quoteRejected' }
+  billingSendQuoteApproved:
+    action: send
+    channel: { $ref: '#/channels/quoteApproved' }
+  billingSendQuoteDeclined:
+    action: send
+    channel: { $ref: '#/channels/quoteDeclined' }
+  billingSendQuoteExpired:
+    action: send
+    channel: { $ref: '#/channels/quoteExpired' }
+  osSendInventoryReservationRequested:
+    action: send
+    channel: { $ref: '#/channels/inventoryReservationRequested' }
+  operacoesSendInventoryReserved:
+    action: send
+    channel: { $ref: '#/channels/inventoryReserved' }
+  operacoesSendInventoryReservationRejected:
+    action: send
+    channel: { $ref: '#/channels/inventoryReservationRejected' }
+  osSendPaymentCreationRequested:
+    action: send
+    channel: { $ref: '#/channels/paymentCreationRequested' }
+  billingSendPaymentPending:
+    action: send
+    channel: { $ref: '#/channels/paymentPending' }
+  billingSendPaymentApproved:
+    action: send
+    channel: { $ref: '#/channels/paymentApproved' }
+  billingSendPaymentDeclined:
+    action: send
+    channel: { $ref: '#/channels/paymentDeclined' }
+  billingSendPaymentOutcomeUnknown:
+    action: send
+    channel: { $ref: '#/channels/paymentOutcomeUnknown' }
+  osSendExecutionStartRequested:
+    action: send
+    channel: { $ref: '#/channels/executionStartRequested' }
+  operacoesSendExecutionStarted:
+    action: send
+    channel: { $ref: '#/channels/executionStarted' }
+  operacoesSendExecutionStartRejected:
+    action: send
+    channel: { $ref: '#/channels/executionStartRejected' }
+  operacoesSendExecutionCompleted:
+    action: send
+    channel: { $ref: '#/channels/executionCompleted' }
+  operacoesSendExecutionFailed:
+    action: send
+    channel: { $ref: '#/channels/executionFailed' }
+  osSendInventoryReleaseRequested:
+    action: send
+    channel: { $ref: '#/channels/inventoryReleaseRequested' }
+  operacoesSendInventoryReleased:
+    action: send
+    channel: { $ref: '#/channels/inventoryReleased' }
+  osSendPaymentRefundRequested:
+    action: send
+    channel: { $ref: '#/channels/paymentRefundRequested' }
+  billingSendPaymentRefunded:
+    action: send
+    channel: { $ref: '#/channels/paymentRefunded' }
+  billingSendPaymentRefundPending:
+    action: send
+    channel: { $ref: '#/channels/paymentRefundPending' }
+  billingSendPaymentRefundFailed:
+    action: send
+    channel: { $ref: '#/channels/paymentRefundFailed' }
+
+components:
+  messages:
+    DiagnosisRequested:
+      name: DiagnosisRequested.v1
+      summary: Solicita o diagnóstico do veículo da OS na filial.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - type: object
+            required: [veiculoId]
+            properties:
+              veiculoId: { type: string, format: uuid }
+    DiagnosisCompleted:
+      name: DiagnosisCompleted.v1
+      summary: Itens necessários com snapshot do preço vigente no catálogo de Operações. Não reserva estoque.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [executionId, priceSnapshotAtUtc, currency, items]
+            properties:
+              executionId: { type: string, format: uuid }
+              priceSnapshotAtUtc: { type: string, format: date-time }
+              currency: { $ref: '#/components/schemas/Currency' }
+              items:
+                type: array
+                minItems: 1
+                items: { $ref: '#/components/schemas/PricedItem' }
+    DiagnosisRejected:
+      name: DiagnosisRejected.v1
+      summary: Operações rejeita o pedido de diagnóstico (por exemplo, filial inválida).
+      payload: { $ref: '#/components/schemas/Rejection' }
+    QuoteRequested:
+      name: QuoteRequested.v1
+      summary: Solicita orçamento a partir dos itens e preços do diagnóstico. Billing não consulta Operações.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - type: object
+            required: [clienteId, priceSnapshotAtUtc, currency, items]
+            properties:
+              clienteId: { type: string, format: uuid }
+              priceSnapshotAtUtc: { type: string, format: date-time }
+              currency: { $ref: '#/components/schemas/Currency' }
+              items:
+                type: array
+                minItems: 1
+                items: { $ref: '#/components/schemas/PricedItem' }
+    QuoteReady:
+      name: QuoteReady.v1
+      summary: Versão de orçamento pronta para apresentação ao cliente.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - $ref: '#/components/schemas/QuoteRef'
+          - type: object
+            required: [amount, currency, expiresAtUtc]
+            properties:
+              amount: { $ref: '#/components/schemas/Money' }
+              currency: { $ref: '#/components/schemas/Currency' }
+              expiresAtUtc: { type: string, format: date-time }
+    QuoteRejected:
+      name: QuoteRejected.v1
+      summary: Solicitação de orçamento inválida (por exemplo, item sem preço, preço não positivo ou sem moeda). Não cria pagamento.
+      payload: { $ref: '#/components/schemas/Rejection' }
+    QuoteApproved:
+      name: QuoteApproved.v1
+      summary: Cliente aprovou a versão exata do orçamento.
+      payload: { $ref: '#/components/schemas/QuoteDecision' }
+    QuoteDeclined:
+      name: QuoteDeclined.v1
+      summary: Cliente recusou a versão do orçamento.
+      payload: { $ref: '#/components/schemas/QuoteDecision' }
+    QuoteExpired:
+      name: QuoteExpired.v1
+      summary: Versão do orçamento expirou sem decisão. OS encerra sem reserva ou cobrança.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - $ref: '#/components/schemas/QuoteRef'
+    InventoryReservationRequested:
+      name: InventoryReservationRequested.v1
+      summary: Reserva peças por (filialId, pecaId). Sem empréstimo de outra filial.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                minItems: 1
+                items: { $ref: '#/components/schemas/PecaQuantity' }
+    InventoryReserved:
+      name: InventoryReserved.v1
+      summary: Reserva confirmada para todos os itens.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [reservationId, items]
+            properties:
+              reservationId: { type: string, format: uuid }
+              items:
+                type: array
+                items: { $ref: '#/components/schemas/PecaQuantity' }
+    InventoryReservationRejected:
+      name: InventoryReservationRejected.v1
+      summary: Saldo insuficiente na filial. Nenhum saldo é alterado parcialmente.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Rejection'
+          - type: object
+            properties:
+              unavailablePecaIds:
+                type: array
+                items: { type: string, format: uuid }
+    PaymentCreationRequested:
+      name: PaymentCreationRequested.v1
+      summary: Cria tentativa de pagamento para a versão, valor e moeda aprovados.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - $ref: '#/components/schemas/QuoteRef'
+          - type: object
+            required: [amount, currency]
+            properties:
+              amount: { $ref: '#/components/schemas/Money' }
+              currency: { $ref: '#/components/schemas/Currency' }
+    PaymentPending:
+      name: PaymentPending.v1
+      summary: Tentativa criada no Mercado Pago. Não significa aprovação.
+      payload: { $ref: '#/components/schemas/PaymentRef' }
+    PaymentApproved:
+      name: PaymentApproved.v1
+      summary: Pagamento aprovado e reconciliado com o Mercado Pago.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/PaymentRef'
+          - type: object
+            required: [amount, currency, approvedAtUtc]
+            properties:
+              amount: { $ref: '#/components/schemas/Money' }
+              currency: { $ref: '#/components/schemas/Currency' }
+              approvedAtUtc: { type: string, format: date-time }
+    PaymentDeclined:
+      name: PaymentDeclined.v1
+      summary: Recusa/cancelamento terminal confirmado pelo provedor.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/PaymentRef'
+          - $ref: '#/components/schemas/Reason'
+    PaymentOutcomeUnknown:
+      name: PaymentOutcomeUnknown.v1
+      summary: Resultado incerto por timeout/erro técnico. Exige reconciliação; não é recusa.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/PaymentRef'
+          - $ref: '#/components/schemas/Reason'
+    ExecutionStartRequested:
+      name: ExecutionStartRequested.v1
+      summary: Inicia a execução diagnosticada, com reserva existente e pagamento aprovado.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - type: object
+            required: [executionId, reservationId]
+            properties:
+              executionId: { type: string, format: uuid }
+              reservationId: { type: string, format: uuid }
+    ExecutionStarted:
+      name: ExecutionStarted.v1
+      summary: Execução entrou na fila/iniciou.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [executionId, startedAtUtc]
+            properties:
+              executionId: { type: string, format: uuid }
+              startedAtUtc: { type: string, format: date-time }
+    ExecutionStartRejected:
+      name: ExecutionStartRejected.v1
+      summary: Execução rejeitada antes de qualquer trabalho ou consumo de peça.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Rejection'
+          - type: object
+            required: [executionId]
+            properties:
+              executionId: { type: string, format: uuid }
+    ExecutionCompleted:
+      name: ExecutionCompleted.v1
+      summary: Reparo concluído, com as quantidades efetivamente consumidas da reserva.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [executionId, completedAtUtc, consumedItems]
+            properties:
+              executionId: { type: string, format: uuid }
+              completedAtUtc: { type: string, format: date-time }
+              consumedItems:
+                type: array
+                items: { $ref: '#/components/schemas/PecaQuantity' }
+    ExecutionFailed:
+      name: ExecutionFailed.v1
+      summary: Execução falhou. Informa o consumo real; OS solicita estorno total e liberação do não consumido.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - $ref: '#/components/schemas/Reason'
+          - type: object
+            required: [executionId, consumedItems]
+            properties:
+              executionId: { type: string, format: uuid }
+              consumedItems:
+                type: array
+                items: { $ref: '#/components/schemas/PecaQuantity' }
+    InventoryReleaseRequested:
+      name: InventoryReleaseRequested.v1
+      summary: Libera as quantidades não consumidas da reserva. Idempotente.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - $ref: '#/components/schemas/Reason'
+          - type: object
+            required: [reservationId]
+            properties:
+              reservationId: { type: string, format: uuid }
+    InventoryReleased:
+      name: InventoryReleased.v1
+      summary: Liberação confirmada.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [reservationId, releasedItems]
+            properties:
+              reservationId: { type: string, format: uuid }
+              releasedItems:
+                type: array
+                items: { $ref: '#/components/schemas/PecaQuantity' }
+    PaymentRefundRequested:
+      name: PaymentRefundRequested.v1
+      summary: Solicita estorno total do pagamento aprovado (compensação).
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - $ref: '#/components/schemas/Reason'
+          - type: object
+            required: [paymentId, amount, currency]
+            properties:
+              paymentId: { type: string, format: uuid }
+              amount: { $ref: '#/components/schemas/Money' }
+              currency: { $ref: '#/components/schemas/Currency' }
+    PaymentRefunded:
+      name: PaymentRefunded.v1
+      summary: Estorno confirmado pelo provedor.
+      payload: { $ref: '#/components/schemas/RefundResult' }
+    PaymentRefundPending:
+      name: PaymentRefundPending.v1
+      summary: Estorno solicitado e ainda não confirmado.
+      payload: { $ref: '#/components/schemas/RefundResult' }
+    PaymentRefundFailed:
+      name: PaymentRefundFailed.v1
+      summary: Estorno falhou após as tentativas; Saga vai para ManualActionRequired.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/RefundResult'
+          - $ref: '#/components/schemas/Reason'
+
+  schemas:
+    Envelope:
+      type: object
+      description: Campos obrigatórios em toda mensagem (ADR-017). Payloads não carregam segredos, CPF completo, PAN/CVV nem cópia de estado de outro serviço.
+      required: [messageId, messageType, schemaVersion, producer, occurredAtUtc, correlationId, osId, filialId]
+      properties:
+        messageId: { type: string, format: uuid, description: Único por mensagem; chave de deduplicação na inbox. }
+        messageType: { type: string, pattern: '^[A-Za-z]+\.v[0-9]+$', examples: [PaymentApproved.v1] }
+        schemaVersion: { type: integer, minimum: 1 }
+        producer: { type: string, enum: [os, billing, operacoes] }
+        occurredAtUtc: { type: string, format: date-time }
+        correlationId: { type: string, format: uuid, description: 'Identificador estável da Saga, criado pelo OS.' }
+        causationId: { type: string, format: uuid, description: messageId que causou esta mensagem. Ausente apenas no primeiro comando da Saga. }
+        osId: { type: string, format: uuid }
+        filialId: { type: string, format: uuid }
+        idempotencyKey: { type: string, minLength: 1, description: Obrigatória em comandos; estável por efeito. }
+    CommandEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [idempotencyKey]
+    Reason:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, description: Motivo legível e sem dados pessoais. }
+    Rejection:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - $ref: '#/components/schemas/Reason'
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      examples: [BRL]
+    Money:
+      type: number
+      exclusiveMinimum: 0
+      multipleOf: 0.01
+    PricedItem:
+      type: object
+      required: [itemId, type, description, quantity, unitPrice]
+      properties:
+        itemId: { type: string, format: uuid }
+        type: { type: string, enum: [Peca, Servico] }
+        description: { type: string, minLength: 1 }
+        quantity: { type: integer, minimum: 1 }
+        unitPrice: { $ref: '#/components/schemas/Money' }
+    PecaQuantity:
+      type: object
+      required: [pecaId, quantity]
+      properties:
+        pecaId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 0 }
+    QuoteRef:
+      type: object
+      required: [quoteId, quoteVersion]
+      properties:
+        quoteId: { type: string, format: uuid }
+        quoteVersion: { type: integer, minimum: 1 }
+    QuoteDecision:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - $ref: '#/components/schemas/QuoteRef'
+        - type: object
+          required: [decidedAtUtc]
+          properties:
+            decidedAtUtc: { type: string, format: date-time }
+    PaymentRef:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [paymentId]
+          properties:
+            paymentId: { type: string, format: uuid }
+            providerReference: { type: string, description: 'ID da tentativa no Mercado Pago, quando já existir.' }
+    RefundResult:
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [paymentId]
+          properties:
+            paymentId: { type: string, format: uuid }
+            providerRefundReference: { type: string }

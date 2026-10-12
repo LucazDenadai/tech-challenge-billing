@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OficinaMecanica.Billing.Domain/OficinaMecanica.Billing.Domain.csproj" />
+    <Project Path="src/OficinaMecanica.Billing.API/OficinaMecanica.Billing.API.csproj" />
+    <Project Path="src/OficinaMecanica.Billing.Application/OficinaMecanica.Billing.Application.csproj" />
+    <Project Path="src/OficinaMecanica.Billing.Infrastructure/OficinaMecanica.Billing.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OficinaMecanica.Billing.UnitTests/OficinaMecanica.Billing.UnitTests.csproj" />
+    <Project Path="tests/OficinaMecanica.Billing.IntegrationTests/OficinaMecanica.Billing.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
