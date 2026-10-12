@@ -38,8 +38,9 @@ public class VersaoOrcamento : EntityBase
         Numero = numero;
         IdempotencyKey = idempotencyKey;
         Moeda = moeda;
-        PrecoSnapshotEm = precoSnapshotEm;
-        ExpiraEm = publicadaEm + validade;
+        // Instantes em UTC: o timestamptz do PostgreSQL não guarda o offset recebido.
+        PrecoSnapshotEm = precoSnapshotEm.ToUniversalTime();
+        ExpiraEm = (publicadaEm + validade).ToUniversalTime();
 
         for (var i = 0; i < itens.Count; i++)
             _itens.Add(new ItemOrcamento(Id, i + 1, itens[i]));
@@ -57,7 +58,7 @@ public class VersaoOrcamento : EntityBase
             throw new InvalidOperationException($"Versão {Numero} no status '{Status}' não pode mudar para '{status}'.");
 
         Status = status;
-        EncerradaEm = quando;
+        EncerradaEm = quando.ToUniversalTime();
         MarcarAtualizado();
     }
 }

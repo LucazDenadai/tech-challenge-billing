@@ -144,6 +144,6 @@ public class DecisaoOrcamento : EntityBase
         Resultado = resultado;
         ClienteId = clienteId;
         Motivo = motivo;
-        DecididaEm = decididaEm;
+        DecididaEm = decididaEm.ToUniversalTime();
     }
 }
