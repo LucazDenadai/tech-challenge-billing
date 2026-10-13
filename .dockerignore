@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+*.env
+bin/
+obj/
+**/TestResults
+*.user
+.vs/
+docker-compose*.yml
+README.md
+tests/
+docs/
