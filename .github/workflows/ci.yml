@@ -130,4 +130,5 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Registrar a imagem
-        run: echo "Imagem publicada: \`ghcr.io/lucazdenadai/tech-challenge-billing:sha-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Imagem publicada: ghcr.io/lucazdenadai/tech-challenge-billing:sha-${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
