@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Política de cobertura do CARD-41a: mede unitários e integração juntos, só o código de produção. -->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <!-- OpenCover para o SonarCloud; Cobertura para o ReportGenerator e o gate. -->
+          <Format>opencover,cobertura</Format>
+          <!-- Migrations, entry point e código gerado ficam fora. -->
+          <ExcludeByFile>**/Migrations/*.cs,**/Program.cs,**/*.g.cs</ExcludeByFile>
+          <Exclude>[*.UnitTests]*,[*.IntegrationTests]*</Exclude>
+          <!-- [ExcludeFromCodeCoverage] marca construtores do EF Core e modelos de tabela. -->
+          <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
