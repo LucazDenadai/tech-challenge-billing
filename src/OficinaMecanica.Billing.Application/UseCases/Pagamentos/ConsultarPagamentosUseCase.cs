@@ -19,14 +19,16 @@ namespace OficinaMecanica.Billing.Application.UseCases.Pagamentos;
 /// <param name="EstornadoEm">Quando o estorno foi confirmado.</param>
 /// <param name="MotivoFalhaEstorno">Por que o estorno falhou.</param>
 /// <param name="ReconciliacaoManual">O pagamento parou esperando ação manual (sem resposta do provedor ou estado fora do fluxo).</param>
+// ReferenciaProvedor é o ID da cobrança no Mercado Pago: permite ao atendimento conferir o pagamento no painel
+// e, no modo Simulado, usar a rota do simulador (CARD-40c). Não é dado do pagador.
 public sealed record PagamentoResponse(
     Guid PaymentId, Guid OsId, Guid QuoteId, int QuoteVersion, decimal Valor, string Moeda, StatusPagamento Status,
     string? CodigoPix, string? UrlPagamento, DateTimeOffset ExpiraEm, DateTimeOffset? AprovadoEm, string? MotivoRecusa,
-    DateTimeOffset? EstornadoEm, string? MotivoFalhaEstorno, bool ReconciliacaoManual)
+    DateTimeOffset? EstornadoEm, string? MotivoFalhaEstorno, bool ReconciliacaoManual, string? ReferenciaProvedor)
 {
     public static PagamentoResponse De(Pagamento p) => new(
         p.Id, p.OsId, p.QuoteId, p.QuoteVersion, p.Valor, p.Moeda, p.Status, p.CodigoPix, p.UrlPagamento, p.ExpiraEm, p.AprovadoEm,
-        p.MotivoRecusa, p.EstornadoEm, p.MotivoFalhaEstorno, p.ReconciliacaoManual);
+        p.MotivoRecusa, p.EstornadoEm, p.MotivoFalhaEstorno, p.ReconciliacaoManual, p.ReferenciaProvedor);
 }
 
 public class ConsultarPagamentosUseCase(IPagamentoRepository repository)

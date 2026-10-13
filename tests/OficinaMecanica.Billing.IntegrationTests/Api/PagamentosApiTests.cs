@@ -196,6 +196,8 @@ public class PagamentosApiTests : IAsyncLifetime
         Assert.Equal(pagamento.Id, meu.PaymentId);
         Assert.Equal(StatusPagamento.Pendente, meu.Status);
         Assert.StartsWith("00020126", meu.CodigoPix);
+        // A referência do provedor aparece na consulta (simulador e conferência no painel, CARD-40c).
+        Assert.Equal(pagamento.ReferenciaProvedor, meu.ReferenciaProvedor);
         Assert.Empty(deOutro!);
     }
 
