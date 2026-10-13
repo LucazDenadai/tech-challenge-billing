@@ -123,6 +123,21 @@ channels:
     description: "Evento. Produtor: Operações. Consumidor: OS."
     messages:
       ExecutionStartRejected: { $ref: '#/components/messages/ExecutionStartRejected' }
+  executionCancelRequested:
+    address: saga-os.execution-cancel-requested.v1
+    description: "Comando. Produtor: OS. Consumidor: Operações."
+    messages:
+      ExecutionCancelRequested: { $ref: '#/components/messages/ExecutionCancelRequested' }
+  executionCancelled:
+    address: saga-os.execution-cancelled.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionCancelled: { $ref: '#/components/messages/ExecutionCancelled' }
+  executionCancelRejected:
+    address: saga-os.execution-cancel-rejected.v1
+    description: "Evento. Produtor: Operações. Consumidor: OS."
+    messages:
+      ExecutionCancelRejected: { $ref: '#/components/messages/ExecutionCancelRejected' }
   executionCompleted:
     address: saga-os.execution-completed.v1
     description: "Evento. Produtor: Operações. Consumidor: OS."
@@ -225,6 +240,15 @@ operations:
   operacoesSendExecutionStartRejected:
     action: send
     channel: { $ref: '#/channels/executionStartRejected' }
+  osSendExecutionCancelRequested:
+    action: send
+    channel: { $ref: '#/channels/executionCancelRequested' }
+  operacoesSendExecutionCancelled:
+    action: send
+    channel: { $ref: '#/channels/executionCancelled' }
+  operacoesSendExecutionCancelRejected:
+    action: send
+    channel: { $ref: '#/channels/executionCancelRejected' }
   operacoesSendExecutionCompleted:
     action: send
     channel: { $ref: '#/channels/executionCompleted' }
@@ -415,15 +439,18 @@ components:
           - $ref: '#/components/schemas/Reason'
     ExecutionStartRequested:
       name: ExecutionStartRequested.v1
-      summary: Inicia a execução diagnosticada, com reserva existente e pagamento aprovado.
+      summary: Inicia a execução diagnosticada, com pagamento aprovado e reserva existente quando há peças.
       payload:
         allOf:
           - $ref: '#/components/schemas/CommandEnvelope'
           - type: object
-            required: [executionId, reservationId]
+            required: [executionId]
             properties:
               executionId: { type: string, format: uuid }
-              reservationId: { type: string, format: uuid }
+              reservationId:
+                type: string
+                format: uuid
+                description: 'Ausente quando o orçamento não tem peças (serviço sem peça, ADR-020). Era obrigatório; a mudança usa a exceção de versionamento do ADR-020.'
     ExecutionStarted:
       name: ExecutionStarted.v1
       summary: Execução entrou na fila/iniciou.
@@ -438,6 +465,37 @@ components:
     ExecutionStartRejected:
       name: ExecutionStartRejected.v1
       summary: Execução rejeitada antes de qualquer trabalho ou consumo de peça.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Rejection'
+          - type: object
+            required: [executionId]
+            properties:
+              executionId: { type: string, format: uuid }
+    ExecutionCancelRequested:
+      name: ExecutionCancelRequested.v1
+      summary: Pede o cancelamento da execução antes do reparo (ADR-020). Operações decide.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CommandEnvelope'
+          - $ref: '#/components/schemas/Reason'
+          - type: object
+            required: [executionId]
+            properties:
+              executionId: { type: string, format: uuid }
+    ExecutionCancelled:
+      name: ExecutionCancelled.v1
+      summary: Execução cancelada antes do reparo; nenhuma peça consumida.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/Envelope'
+          - type: object
+            required: [executionId]
+            properties:
+              executionId: { type: string, format: uuid }
+    ExecutionCancelRejected:
+      name: ExecutionCancelRejected.v1
+      summary: Cancelamento recusado, por exemplo com o reparo já em andamento.
       payload:
         allOf:
           - $ref: '#/components/schemas/Rejection'
