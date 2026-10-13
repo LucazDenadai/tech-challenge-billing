@@ -1,3 +1,4 @@
+using OficinaMecanica.Billing.Application.UseCases.Pagamentos;
 using OficinaMecanica.Billing.Infrastructure.Adapters.In.Messaging;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
@@ -28,6 +29,7 @@ public static class OpenTelemetryExtensions
                 .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService(serviceName))
                 .AddAspNetCoreInstrumentation()
                 .AddRuntimeInstrumentation()
+                .AddMeter(MetricasPagamento.NomeMedidor)
                 .AddPrometheusExporter());
 
         return builder;

@@ -5,9 +5,11 @@ using OficinaMecanica.Billing.Application.Ports.In;
 using OficinaMecanica.Billing.Application.Ports.Out;
 using OficinaMecanica.Billing.Application.UseCases.Mensageria;
 using OficinaMecanica.Billing.Application.UseCases.Orcamentos;
+using OficinaMecanica.Billing.Application.UseCases.Pagamentos;
 using OficinaMecanica.Billing.Infrastructure.Adapters.In.Agendamento;
 using OficinaMecanica.Billing.Infrastructure.Adapters.In.Messaging;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Messaging;
+using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Pagamentos;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence.Repositories;
 
@@ -42,12 +44,52 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IOrcamentoParaPagamento>(sp => sp.GetRequiredService<ConsultarOrcamentosUseCase>());
         services.AddScoped<ProcessarMensagemSagaUseCase>();
 
+        AddPagamentos(services, configuration);
+
         var secaoExpiracao = configuration.GetSection(ExpiracaoOptions.Secao);
         services.Configure<ExpiracaoOptions>(secaoExpiracao);
         if ((secaoExpiracao.Get<ExpiracaoOptions>() ?? new ExpiracaoOptions()).ExpiracaoHabilitada)
             services.AddHostedService<ExpiracaoOrcamentosHostedService>();
 
         return services;
+    }
+
+    // Pagamento Pix pelo Mercado Pago ou pelo provedor simulado (ADR-019).
+    private static void AddPagamentos(IServiceCollection services, IConfiguration configuration)
+    {
+        var secao = configuration.GetSection(MercadoPagoOptions.Secao);
+        var opcoes = secao.Get<MercadoPagoOptions>() ?? new MercadoPagoOptions();
+        opcoes.Validar();
+        services.Configure<MercadoPagoOptions>(secao);
+
+        services.AddSingleton(new ConfiguracaoPagamento(
+            TimeSpan.FromMinutes(opcoes.ExpiracaoMinutos),
+            TimeSpan.FromMinutes(opcoes.IntervaloVerificacaoMinutos),
+            opcoes.MaxTentativasReconciliacao));
+
+        services.AddScoped<IPagamentoRepository, PagamentoRepository>();
+        services.AddScoped<INotificacaoPagamentoRepository, NotificacaoPagamentoRepository>();
+        services.AddScoped<SolicitarPagamentoUseCase>();
+        services.AddScoped<SolicitarEstornoUseCase>();
+        services.AddScoped<CobrarPagamentoUseCase>();
+        services.AddScoped<EstornarPagamentoUseCase>();
+        services.AddScoped<ReconciliarPagamentoUseCase>();
+        services.AddScoped<VerificarPagamentosUseCase>();
+        services.AddScoped<ConsultarPagamentosUseCase>();
+
+        if (opcoes.Modo == ModoProvedor.Simulado)
+        {
+            // Singleton: o "provedor" guarda os pagamentos em memória enquanto o serviço roda.
+            services.AddSingleton<ProvedorPagamentoSimulado>();
+            services.AddSingleton<IProvedorPagamento>(sp => sp.GetRequiredService<ProvedorPagamentoSimulado>());
+        }
+        else
+        {
+            services.AddHttpClient<IProvedorPagamento, ProvedorMercadoPago>(http => ProvedorMercadoPago.Configurar(http, opcoes));
+        }
+
+        if (opcoes.ReconciliacaoHabilitada)
+            services.AddHostedService<ReconciliacaoPagamentosHostedService>();
     }
 
     // Consumidor dos comandos da Saga e despachante da outbox (ADR-016, ADR-018). Desabilitado, nenhuma conexão é aberta.
