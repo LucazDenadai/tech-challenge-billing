@@ -1,0 +1,133 @@
+# CI do serviço Billing (CARD-41a): build, testes, cobertura com gate, SonarCloud e imagem.
+# Independente dos outros serviços: só este repositório (e a spec do tech-challenge-docs) entram aqui.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  COBERTURA_MINIMA: 80
+
+jobs:
+  build-e-testes:
+    name: build-e-testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # A cópia da spec é usada nos testes de contrato; precisa ser igual à fonte (ADR-018).
+      - name: Conferir a cópia da spec AsyncAPI
+        run: |
+          curl -sSf https://raw.githubusercontent.com/LucazDenadai/tech-challenge-docs/main/contratos/asyncapi-saga-os.yaml -o /tmp/spec.yaml
+          tail -n +3 contratos/asyncapi-saga-os.yaml | diff -u /tmp/spec.yaml - \
+            || { echo "::error::contratos/asyncapi-saga-os.yaml difere da spec do tech-challenge-docs"; exit 1; }
+
+      - name: Iniciar análise do SonarCloud
+        if: env.SONAR_TOKEN != '' && env.SONAR_ORGANIZATION != ''
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet sonarscanner begin \
+            /k:"${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', secrets.SONAR_ORGANIZATION, github.event.repository.name) }}" \
+            /o:"$SONAR_ORGANIZATION" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.cs.opencover.reportsPaths="cobertura/**/coverage.opencover.xml" \
+            /d:sonar.exclusions="**/Migrations/**,**/bin/**,**/obj/**,e2e/**" \
+            /d:sonar.coverage.exclusions="**/Program.cs,**/Migrations/**,**/*.g.cs"
+
+      - name: Avisar que o SonarCloud não está configurado
+        if: env.SONAR_TOKEN == '' || env.SONAR_ORGANIZATION == ''
+        run: echo "::warning::SONAR_TOKEN/SONAR_ORGANIZATION ausentes; análise do SonarCloud pulada. O gate de cobertura continua valendo."
+
+      - name: Restore e build
+        run: |
+          dotnet restore OficinaMecanica.Billing.slnx
+          dotnet build OficinaMecanica.Billing.slnx --no-restore --configuration Release
+
+      # Testcontainers sobe PostgreSQL, RabbitMQ no Docker do runner.
+      - name: Testes unitários e de integração com cobertura
+        run: |
+          dotnet test tests/OficinaMecanica.Billing.UnitTests --no-build --configuration Release --settings coverlet.runsettings --results-directory cobertura
+          dotnet test tests/OficinaMecanica.Billing.IntegrationTests --no-build --configuration Release --settings coverlet.runsettings --results-directory cobertura
+
+      - name: Relatório de cobertura
+        if: always()
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+          reportgenerator -reports:"cobertura/**/coverage.cobertura.xml" -targetdir:relatorio-cobertura \
+            "-reporttypes:Html;JsonSummary;MarkdownSummaryGithub"
+          cat relatorio-cobertura/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Gate do CARD-41a: linhas E branches >= 80%. Abaixo de qualquer um, o job falha com a métrica e o valor.
+      - name: Gate de cobertura (linhas e branches >= ${{ env.COBERTURA_MINIMA }}%)
+        run: |
+          linhas=$(jq '.summary.linecoverage' relatorio-cobertura/Summary.json)
+          branches=$(jq '.summary.branchcoverage' relatorio-cobertura/Summary.json)
+          echo "Linhas: $linhas% | Branches: $branches% | Mínimo: $COBERTURA_MINIMA%"
+          falhou=0
+          awk -v v="$linhas" -v m="$COBERTURA_MINIMA" 'BEGIN { exit !(v < m) }' && { echo "::error::Cobertura de linhas $linhas% abaixo de $COBERTURA_MINIMA%"; falhou=1; }
+          awk -v v="$branches" -v m="$COBERTURA_MINIMA" 'BEGIN { exit !(v < m) }' && { echo "::error::Cobertura de branches $branches% abaixo de $COBERTURA_MINIMA%"; falhou=1; }
+          exit $falhou
+
+      - name: Concluir análise do SonarCloud
+        if: env.SONAR_TOKEN != '' && env.SONAR_ORGANIZATION != ''
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+
+      - name: Publicar relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-tech-challenge-billing
+          path: relatorio-cobertura/
+          if-no-files-found: warn
+
+  # Só na main: imagem imutável com a tag do commit. Nunca `latest` (CARD-41a).
+  imagem:
+    name: imagem
+    needs: build-e-testes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build e push
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/lucazdenadai/tech-challenge-billing:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Registrar a imagem
+        run: echo "Imagem publicada: \`ghcr.io/lucazdenadai/tech-challenge-billing:sha-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
