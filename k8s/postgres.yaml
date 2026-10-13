@@ -1,0 +1,45 @@
+# Banco exclusivo do serviço (ADR-016), no cluster e sem disco persistente: demonstração (ADR-021).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-billing
+  labels: { app: postgres-billing }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: postgres-billing }
+  template:
+    metadata:
+      labels: { app: postgres-billing }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - { name: POSTGRES_DB, value: oficina_billing }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: billing-segredos, key: db-senha } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: dados, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: dados
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-billing
+spec:
+  selector: { app: postgres-billing }
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
