@@ -1,0 +1,20 @@
+# Billing no sandbox do Mercado Pago (CARD-39b, passo 6), com URL pública para o webhook.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.sandbox.yml logs tunel
+#
+# Exige MercadoPago__AccessToken e MercadoPago__WebhookSecret no ambiente do host.
+# O túnel é um Quick Tunnel da Cloudflare: https://<aleatório>.trycloudflare.com, sem conta.
+# A URL muda a cada start; cadastre <url>/billing/pagamentos/webhook/mercadopago no painel.
+services:
+  billing-api:
+    profiles: !reset []
+    environment:
+      MercadoPago__Modo: MercadoPago
+      MercadoPago__AccessToken: ${MercadoPago__AccessToken:?defina MercadoPago__AccessToken no ambiente}
+      MercadoPago__WebhookSecret: ${MercadoPago__WebhookSecret:?defina MercadoPago__WebhookSecret no ambiente}
+
+  tunel:
+    image: cloudflare/cloudflared:2025.9.1
+    depends_on: [billing-api]
+    command: tunnel --no-autoupdate --url http://billing-api:8080

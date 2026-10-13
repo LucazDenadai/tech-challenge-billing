@@ -3,9 +3,35 @@
 #
 #   docker compose up -d
 #
-# Depois rode a API pelo dotnet com as variáveis do README (seção Executar).
+# Depois rode a API pelo dotnet com as variáveis do README (seção Executar), ou no Compose:
+#
+#   docker compose --profile api up -d --build    API em http://localhost:8082 (modo Simulado)
+#
+# Para o sandbox do Mercado Pago com webhook público, veja docker-compose.sandbox.yml.
 # O fluxo integrado da Saga, com um broker só para os três serviços, fica no CARD-40.
 services:
+  billing-api:
+    build: .
+    profiles: [api]
+    restart: on-failure
+    depends_on: [postgres, rabbitmq, jaeger]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=oficina_billing;Username=postgres;Password=postgres"
+      RabbitMq__Enabled: "true"
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: billing
+      RabbitMq__Password: billing-local
+      Jaeger__Endpoint: http://jaeger:4318
+      Jwt__Key: ${Jwt__Key:-chave-local-de-desenvolvimento-com-32-caracteres}
+      # Segredos vêm do ambiente do host, nunca deste arquivo (README, seção Configuração).
+      MercadoPago__Modo: ${MercadoPago__Modo:-Simulado}
+      MercadoPago__AccessToken: ${MercadoPago__AccessToken:-}
+      MercadoPago__WebhookSecret: ${MercadoPago__WebhookSecret:-}
+      MercadoPago__UrlNotificacao: ${MercadoPago__UrlNotificacao:-}
+    ports:
+      - "8082:8080"
+
   postgres:
     image: postgres:16-alpine
     environment:
