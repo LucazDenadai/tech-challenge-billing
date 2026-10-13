@@ -219,7 +219,7 @@ public class OrcamentosApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Swagger_DescreveAsRotasDoOrcamento()
+    public async Task Swagger_DescreveAsRotasDoOrcamentoEDoPagamento()
     {
         var swagger = await _factory.CreateClient().GetFromJsonAsync<JsonElement>("/billing/swagger/v1/swagger.json");
 
@@ -231,8 +231,14 @@ public class OrcamentosApiTests : IAsyncLifetime
         Assert.Contains("/billing/orcamentos/{quoteId}/recusar", rotas);
         // Criação só pela Saga (QuoteRequested): não há POST em /billing/orcamentos.
         Assert.False(swagger.GetProperty("paths").TryGetProperty("/billing/orcamentos", out _));
+        // Pagamento (CARD-39b): consulta, webhook e simulador; a cobrança também só nasce pela Saga.
+        Assert.Contains("/billing/pagamentos/meus", rotas);
+        Assert.Contains("/billing/pagamentos/os/{osId}", rotas);
+        Assert.Contains("/billing/pagamentos/webhook/mercadopago", rotas);
+        Assert.Contains("/billing/simulador/pagamentos/{referencia}/status", rotas);
+        Assert.False(swagger.GetProperty("paths").TryGetProperty("/billing/pagamentos", out _));
 
-        // Evidência do CARD-39a: com EXPORTAR_OPENAPI definido, grava o OpenAPI gerado nesse caminho (docs/openapi/billing-v1.json).
+        // Evidência dos CARD-39a e 39b: com EXPORTAR_OPENAPI definido, grava o OpenAPI gerado nesse caminho (docs/openapi/billing-v1.json).
         if (Environment.GetEnvironmentVariable("EXPORTAR_OPENAPI") is { Length: > 0 } caminho)
             await File.WriteAllTextAsync(caminho, JsonSerializer.Serialize(swagger, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     }
