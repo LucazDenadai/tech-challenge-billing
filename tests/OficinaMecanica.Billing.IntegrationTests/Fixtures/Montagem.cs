@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OficinaMecanica.Billing.Application.Ports.Out;
 using OficinaMecanica.Billing.Application.UseCases.Mensageria;
 using OficinaMecanica.Billing.Application.UseCases.Orcamentos;
+using OficinaMecanica.Billing.Application.UseCases.Pagamentos;
+using OficinaMecanica.Billing.Domain.Pagamentos;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence;
 using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence.Repositories;
 
@@ -13,12 +15,52 @@ namespace OficinaMecanica.Billing.IntegrationTests.Fixtures;
 public static class Montagem
 {
     public const string CanalPedido = "saga-os.quote-requested.v1";
+    public const string CanalCobranca = "saga-os.payment-creation-requested.v1";
     public static readonly TimeSpan Validade = TimeSpan.FromHours(24);
+    public static readonly ConfiguracaoPagamento ConfiguracaoPagamento = new(TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(2), 3);
 
-    public static ProcessarMensagemSagaUseCase Processar(AppDbContext db, IOutbox? outbox = null, TimeProvider? relogio = null)
-        => new(new Transacao(db), new InboxRepository(db), outbox ?? new OutboxRepository(db), new UnidadeDeTrabalho(db),
-            new SolicitarOrcamentoUseCase(new OrcamentoRepository(db), new ConfiguracaoOrcamento(Validade), relogio ?? TimeProvider.System),
+    public static ProcessarMensagemSagaUseCase Processar(AppDbContext db, IOutbox? outbox = null, TimeProvider? relogio = null,
+        IProvedorPagamento? provedor = null)
+    {
+        var tempo = relogio ?? TimeProvider.System;
+        var pagamentos = new PagamentoRepository(db);
+        var saida = outbox ?? new OutboxRepository(db);
+        return new(new Transacao(db), new InboxRepository(db), saida, new UnidadeDeTrabalho(db),
+            new SolicitarOrcamentoUseCase(new OrcamentoRepository(db), new ConfiguracaoOrcamento(Validade), tempo),
+            new SolicitarPagamentoUseCase(pagamentos, new ConsultarOrcamentosUseCase(new OrcamentoRepository(db)), ConfiguracaoPagamento, tempo),
+            new SolicitarEstornoUseCase(pagamentos, ConfiguracaoPagamento, tempo),
+            Cobrar(db, provedor ?? new ProvedorDeTeste(), tempo, saida),
+            new EstornarPagamentoUseCase(pagamentos, provedor ?? new ProvedorDeTeste(), saida, new UnidadeDeTrabalho(db), ConfiguracaoPagamento, tempo,
+                NullLogger<EstornarPagamentoUseCase>.Instance),
             NullLogger<ProcessarMensagemSagaUseCase>.Instance);
+    }
+
+    public static CobrarPagamentoUseCase Cobrar(AppDbContext db, IProvedorPagamento provedor, TimeProvider? relogio = null, IOutbox? outbox = null)
+        => new(new PagamentoRepository(db), provedor, outbox ?? new OutboxRepository(db), new UnidadeDeTrabalho(db), ConfiguracaoPagamento,
+            relogio ?? TimeProvider.System, NullLogger<CobrarPagamentoUseCase>.Instance);
+
+    public static ReconciliarPagamentoUseCase Reconciliar(AppDbContext db, IProvedorPagamento provedor, TimeProvider? relogio = null)
+        => new(new PagamentoRepository(db), new NotificacaoPagamentoRepository(db), provedor, new OutboxRepository(db), new UnidadeDeTrabalho(db),
+            ConfiguracaoPagamento, relogio ?? TimeProvider.System, NullLogger<ReconciliarPagamentoUseCase>.Instance);
+
+    // PaymentCreationRequested para um orçamento aprovado.
+    public static JsonObject PedidoCobranca(Guid osId, Guid filialId, Guid quoteId, decimal valor) => new()
+    {
+        ["messageId"] = Guid.NewGuid().ToString(),
+        ["messageType"] = "PaymentCreationRequested.v1",
+        ["schemaVersion"] = 1,
+        ["producer"] = "os",
+        ["occurredAtUtc"] = DateTimeOffset.UtcNow.ToString("O"),
+        ["correlationId"] = Guid.NewGuid().ToString(),
+        ["osId"] = osId.ToString(),
+        ["filialId"] = filialId.ToString(),
+        ["idempotencyKey"] = $"pagamento:{osId}",
+        ["quoteId"] = quoteId.ToString(),
+        ["quoteVersion"] = 1,
+        ["amount"] = valor,
+        ["currency"] = "BRL",
+        ["payerEmail"] = "cliente@exemplo.com"
+    };
 
     public static DecidirOrcamentoUseCase Decidir(AppDbContext db, TimeProvider? relogio = null)
         => new(new OrcamentoRepository(db), new OutboxRepository(db), new UnidadeDeTrabalho(db), relogio ?? TimeProvider.System,
@@ -54,6 +96,42 @@ public static class Montagem
     }
 
     public static ReadOnlyMemory<byte> Bytes(JsonNode mensagem) => Encoding.UTF8.GetBytes(mensagem.ToJsonString());
+}
+
+// Provedor mínimo para os testes de persistência. Como o Mercado Pago, deduplica a criação pela chave idempotente.
+public sealed class ProvedorDeTeste : IProvedorPagamento
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PagamentoNoProvedor> _pagamentos = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _referenciaPorChave = [];
+    private int _proxima = 100000;
+
+    // Cobranças distintas criadas (chamadas repetidas com a mesma chave não contam).
+    public int Cobrancas => _referenciaPorChave.Count;
+
+    public Task<ResultadoProvedor<PagamentoNoProvedor>> CriarAsync(NovaCobranca cobranca, CancellationToken ct = default)
+    {
+        var referencia = _referenciaPorChave.GetOrAdd(cobranca.ChaveIdempotencia, _ =>
+        {
+            var nova = Interlocked.Increment(ref _proxima).ToString();
+            _pagamentos[nova] = new PagamentoNoProvedor(nova, cobranca.PagamentoId.ToString(), cobranca.Valor, cobranca.Moeda,
+                StatusNoProvedor.Pendente, "pending", null, "00020126pix-teste", null);
+            return nova;
+        });
+        return Task.FromResult(ResultadoProvedor<PagamentoNoProvedor>.Sucesso(_pagamentos[referencia]));
+    }
+
+    public Task<ResultadoProvedor<PagamentoNoProvedor>> ObterAsync(string referencia, CancellationToken ct = default)
+        => Task.FromResult(ResultadoProvedor<PagamentoNoProvedor>.Sucesso(_pagamentos.GetValueOrDefault(referencia)));
+
+    public Task<ResultadoProvedor<PagamentoNoProvedor>> BuscarPorPagamentoAsync(Guid pagamentoId, CancellationToken ct = default)
+        => Task.FromResult(ResultadoProvedor<PagamentoNoProvedor>.Sucesso(
+            _pagamentos.Values.FirstOrDefault(p => p.ReferenciaExterna == pagamentoId.ToString())));
+
+    public Task<ResultadoProvedor<EstornoNoProvedor>> EstornarAsync(string referencia, decimal valor, string chaveIdempotencia, CancellationToken ct = default)
+        => Task.FromResult(ResultadoProvedor<EstornoNoProvedor>.Sucesso(new EstornoNoProvedor($"r-{referencia}", StatusEstornoNoProvedor.Aprovado, "approved")));
+
+    public void Aprovar(string referencia)
+        => _pagamentos[referencia] = _pagamentos[referencia] with { Status = StatusNoProvedor.Aprovado, StatusOriginal = "approved", AprovadoEm = DateTimeOffset.UtcNow };
 }
 
 public sealed class RelogioFixo(DateTimeOffset agora) : TimeProvider

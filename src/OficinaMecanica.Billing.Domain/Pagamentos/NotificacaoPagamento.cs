@@ -20,6 +20,9 @@ public enum ResultadoNotificacao
 // a mesma requisição reenviada não é processada de novo. Assinatura inválida não chega aqui; vai para log e métrica.
 public class NotificacaoPagamento : EntityBase
 {
+    public const int TamanhoMaximoRequestId = 200;
+    private const int TamanhoMaximoDetalhe = 500;
+
     public string RequestId { get; private set; } = null!;
     public string ReferenciaRecurso { get; private set; } = null!;
     public string? Acao { get; private set; }
@@ -40,6 +43,6 @@ public class NotificacaoPagamento : EntityBase
         RecebidaEm = recebidaEm.ToUniversalTime();
         Resultado = resultado;
         PagamentoId = pagamentoId;
-        Detalhe = detalhe;
+        Detalhe = detalhe is { Length: > TamanhoMaximoDetalhe } ? detalhe[..TamanhoMaximoDetalhe] : detalhe;
     }
 }
