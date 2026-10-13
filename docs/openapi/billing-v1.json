@@ -1233,6 +1233,10 @@
           "reconciliacaoManual": {
             "type": "boolean",
             "description": "O pagamento parou esperando ação manual (sem resposta do provedor ou estado fora do fluxo)."
+          },
+          "referenciaProvedor": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false,
