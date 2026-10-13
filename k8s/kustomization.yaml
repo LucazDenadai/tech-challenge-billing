@@ -1,0 +1,15 @@
+# Manifests do serviço Billing (CARD-41b). Plataforma (namespace, RabbitMQ, Jaeger) e Secrets vêm do
+# tech-challenge-infra-k8s/kind (ADR-021). A imagem `tech-challenge-billing:local` é a do build local; no CI da main,
+# o pipeline troca newName/newTag pela imagem do GHCR com a tag do commit.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: oficina-mecanica
+resources:
+  - configmap.yaml
+  - postgres.yaml
+  - deployment.yaml
+  - service.yaml
+images:
+  - name: tech-challenge-billing
+    newName: tech-challenge-billing
+    newTag: local

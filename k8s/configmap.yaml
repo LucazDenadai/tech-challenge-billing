@@ -1,0 +1,15 @@
+# Configuração não secreta. Segredos (senha do banco, chave JWT, RabbitMQ) vêm de Secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-config
+data:
+  ASPNETCORE_ENVIRONMENT: Production
+  Jwt__Issuer: oficina-atendimento
+  Jwt__Audience: oficina-atendimento-api
+  RabbitMq__Enabled: "true"
+  RabbitMq__Host: rabbitmq
+  Jaeger__Endpoint: http://jaeger:4318
+  Cors__Origins__0: http://localhost:8091
+  # Provedor simulado (ADR-019): a demonstração não depende do sandbox do Mercado Pago.
+  MercadoPago__Modo: Simulado

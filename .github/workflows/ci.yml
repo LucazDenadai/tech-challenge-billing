@@ -1,4 +1,4 @@
-# CI do serviço Billing (CARD-41a): build, testes, cobertura com gate, SonarCloud e imagem.
+# CI/CD do serviço Billing (CARD-41a): build, testes, cobertura com gate, SonarCloud, imagem e deploy no Kind.
 # Independente dos outros serviços: só este repositório (e a spec do tech-challenge-docs) entram aqui.
 name: CI
 
@@ -132,3 +132,69 @@ jobs:
       - name: Registrar a imagem
         run: |
           echo "Imagem publicada: ghcr.io/lucazdenadai/tech-challenge-billing:sha-${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # Deploy automatizado em Kubernetes (CARD-41b, ADR-021): Kind no runner com a plataforma compartilhada
+  # do tech-challenge-infra-k8s e só este serviço. No PR, a imagem é construída aqui; na main, é a do GHCR
+  # com a tag do commit. Falha de rollout ou de readiness falha o pipeline.
+  deploy-kind:
+    name: deploy-kind
+    needs: [build-e-testes, imagem]
+    if: always() && needs.build-e-testes.result == 'success' && needs.imagem.result != 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: LucazDenadai/tech-challenge-infra-k8s
+          path: plataforma
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: oficina
+          config: plataforma/kind/cluster.yaml
+
+      - name: Imagem do serviço
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            imagem=ghcr.io/lucazdenadai/tech-challenge-billing
+            tag=sha-${{ github.sha }}
+            docker pull "$imagem:$tag"
+          else
+            imagem=tech-challenge-billing
+            tag=pr-${{ github.sha }}
+            docker build -t "$imagem:$tag" .
+          fi
+          kind load docker-image "$imagem:$tag" --name oficina
+          # Aponta o manifest para a imagem deste commit (nunca latest).
+          sed -i "s#newName: .*#newName: $imagem#; s#newTag: .*#newTag: $tag#" k8s/kustomization.yaml
+          echo "Imagem implantada: $imagem:$tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plataforma compartilhada e segredos
+        run: |
+          kubectl apply -k plataforma/kind/plataforma
+          sh plataforma/kind/segredos.sh billing
+          kubectl -n oficina-mecanica rollout status deployment/rabbitmq --timeout=180s
+
+      - name: Deploy do Billing
+        run: |
+          kubectl apply -k k8s
+          kubectl -n oficina-mecanica rollout status deployment/billing --timeout=300s
+
+      - name: Verificar readiness pela porta exposta
+        run: |
+          curl -sSf --retry 10 --retry-delay 3 --retry-all-errors http://localhost:8091/billing/ready
+          echo "Readiness: http://localhost:8091/billing/ready respondeu 200" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnóstico do rollout
+        if: failure()
+        run: |
+          kubectl -n oficina-mecanica get pods -o wide
+          kubectl -n oficina-mecanica describe deployment/billing
+          kubectl -n oficina-mecanica logs deployment/billing --tail=200 || true
+          kubectl -n oficina-mecanica get events --sort-by=.lastTimestamp | tail -40

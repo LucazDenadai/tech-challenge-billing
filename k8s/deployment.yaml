@@ -1,0 +1,49 @@
+# API do serviço Billing. Migrations e seed rodam no start; o startupProbe dá tempo para isso.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+  labels: { app: billing }
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels: { app: billing }
+  template:
+    metadata:
+      labels: { app: billing }
+    spec:
+      containers:
+        - name: billing
+          image: tech-challenge-billing
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: billing-config }
+          env:
+            - name: DB_SENHA
+              valueFrom: { secretKeyRef: { name: billing-segredos, key: db-senha } }
+            # $(DB_SENHA) é expandido pelo Kubernetes a partir da variável acima.
+            - name: ConnectionStrings__DefaultConnection
+              value: Host=postgres-billing;Database=oficina_billing;Username=postgres;Password=$(DB_SENHA)
+            - name: Jwt__Key
+              valueFrom: { secretKeyRef: { name: plataforma-segredos, key: jwt-key } }
+            - name: RabbitMq__Username
+              valueFrom: { secretKeyRef: { name: plataforma-segredos, key: rabbitmq-usuario } }
+            - name: RabbitMq__Password
+              valueFrom: { secretKeyRef: { name: plataforma-segredos, key: rabbitmq-senha } }
+          startupProbe:
+            httpGet: { path: /billing/health, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet: { path: /billing/health, port: http }
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /billing/ready, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { cpu: "1", memory: 512Mi }
