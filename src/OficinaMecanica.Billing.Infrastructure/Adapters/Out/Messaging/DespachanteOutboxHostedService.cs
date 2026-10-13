@@ -45,10 +45,17 @@ public class DespachanteOutboxHostedService(
         using var escopo = scopeFactory.CreateScope();
         var db = escopo.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // Com mais de uma réplica (CARD-41b), cada despachante trava as linhas que leu até o commit; SKIP LOCKED
+        // faz o outro pular as travadas e pegar as próximas. Assim, o mesmo evento não é publicado em paralelo.
+        await using var transacao = await db.Database.BeginTransactionAsync(ct);
         var pendentes = await db.Outbox
-            .Where(m => m.PublicadaEmUtc == null)
-            .OrderBy(m => m.CriadaEmUtc)
-            .Take(Lote)
+            .FromSqlRaw("""
+                SELECT * FROM "OutboxMensagens"
+                WHERE "PublicadaEmUtc" IS NULL
+                ORDER BY "CriadaEmUtc"
+                LIMIT {0}
+                FOR UPDATE SKIP LOCKED
+                """, Lote)
             .ToListAsync(ct);
 
         foreach (var mensagem in pendentes)
@@ -65,12 +72,14 @@ public class DespachanteOutboxHostedService(
                 mensagem.Tentativas++;
                 mensagem.UltimoErro = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
                 await db.SaveChangesAsync(ct);
+                await transacao.CommitAsync(ct);
                 throw;
             }
 
             await db.SaveChangesAsync(ct);
         }
 
+        await transacao.CommitAsync(ct);
         return pendentes.Count;
     }
 }
