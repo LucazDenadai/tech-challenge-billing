@@ -14,6 +14,7 @@ public class BillingApiFactory(string connectionString) : WebApplicationFactory<
     private const string JwtKey = "chave-jwt-de-teste-com-mais-de-32-caracteres";
     private const string JwtIssuer = "oficina-atendimento";
     private const string JwtAudience = "oficina-atendimento-api";
+    public const string SegredoWebhook = "segredo-do-webhook-de-teste";
 
     public string ConnectionString => connectionString;
 
@@ -27,6 +28,9 @@ public class BillingApiFactory(string connectionString) : WebApplicationFactory<
         builder.UseSetting("RabbitMq:Enabled", "false");
         // Os testes de API controlam a expiração pela data de criação; o serviço em segundo plano fica desligado.
         builder.UseSetting("Orcamento:ExpiracaoHabilitada", "false");
+        // Provedor simulado (padrão) e reconciliação desligada: os testes disparam webhook e simulador explicitamente.
+        builder.UseSetting("MercadoPago:WebhookSecret", SegredoWebhook);
+        builder.UseSetting("MercadoPago:ReconciliacaoHabilitada", "false");
         builder.UseSetting("Jaeger:Endpoint", "http://localhost:4318");
     }
 
