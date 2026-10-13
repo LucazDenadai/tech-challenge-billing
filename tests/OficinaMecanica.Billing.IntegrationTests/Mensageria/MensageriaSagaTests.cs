@@ -6,16 +6,19 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OficinaMecanica.Billing.Application.UseCases.Orcamentos;
+using OficinaMecanica.Billing.Application.UseCases.Pagamentos;
+using OficinaMecanica.Billing.Domain.Pagamentos;
 using OficinaMecanica.Billing.Domain.Orcamentos;
 using OficinaMecanica.Billing.Infrastructure;
 using OficinaMecanica.Billing.Infrastructure.Adapters.In.Messaging;
+using OficinaMecanica.Billing.Infrastructure.Adapters.Out.Pagamentos;
 using OficinaMecanica.Billing.IntegrationTests.Fixtures;
 using RabbitMQ.Client;
 using Testcontainers.RabbitMq;
 
 namespace OficinaMecanica.Billing.IntegrationTests.Mensageria;
 
-// Fluxo real pelo RabbitMQ e PostgreSQL: QuoteRequested -> inbox + orçamento + outbox -> evento publicado (CARD-39a).
+// Fluxo real pelo RabbitMQ e PostgreSQL: comando -> inbox + efeito + outbox -> evento publicado (CARD-39a e CARD-39b).
 [Collection(PostgresCollection.Nome)]
 public class MensageriaSagaTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -26,6 +29,11 @@ public class MensageriaSagaTests(PostgresFixture postgres) : IAsyncLifetime
     private const string Recusado = "saga-os.quote-rejected.v1";
     private const string Aprovado = "saga-os.quote-approved.v1";
     private const string Expirado = "saga-os.quote-expired.v1";
+    private const string Cobranca = "saga-os.payment-creation-requested.v1";
+    private const string PagamentoPendente = "saga-os.payment-pending.v1";
+    private const string PagamentoAprovado = "saga-os.payment-approved.v1";
+    private const string Estorno = "saga-os.payment-refund-requested.v1";
+    private const string Estornado = "saga-os.payment-refunded.v1";
 
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:3.13-alpine")
         .WithUsername(Usuario)
@@ -75,7 +83,7 @@ public class MensageriaSagaTests(PostgresFixture postgres) : IAsyncLifetime
 
         _conexao = await new ConnectionFactory { Uri = uri, UserName = Usuario, Password = Senha }.CreateConnectionAsync();
         _canal = await _conexao.CreateChannelAsync();
-        foreach (var evento in new[] { Pronto, Recusado, Aprovado, Expirado })
+        foreach (var evento in new[] { Pronto, Recusado, Aprovado, Expirado, PagamentoPendente, PagamentoAprovado, Estornado })
         {
             await _canal.ExchangeDeclareAsync(evento, ExchangeType.Fanout, durable: true, autoDelete: false);
             await _canal.QueueDeclareAsync(FilaTeste(evento), durable: false, exclusive: false, autoDelete: false);
@@ -193,6 +201,53 @@ public class MensageriaSagaTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(pronto["quoteId"]!.GetValue<string>(), expirado["quoteId"]!.GetValue<string>());
         await using var db = PostgresFixture.CriarContexto(_conexaoBanco);
         Assert.Equal(StatusVersaoOrcamento.Expirada, (await db.Set<VersaoOrcamento>().SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Pagamento_PendenteAprovadoEEstornadoPeloBrokerNaMesmaSaga()
+    {
+        // Orçamento aprovado pelo cliente, como no fluxo da Saga.
+        var clienteId = Guid.NewGuid();
+        await PublicarAsync(Pedido, Montagem.Pedido(clienteId: clienteId));
+        var (pronto, _) = await ReceberAsync(FilaTeste(Pronto));
+        var quoteId = Guid.Parse(pronto["quoteId"]!.GetValue<string>());
+        using (var escopo = _host.Services.CreateScope())
+            await escopo.ServiceProvider.GetRequiredService<DecidirOrcamentoUseCase>()
+                .ExecutarAsync(new DecidirOrcamentoCommand(quoteId, 1, ResultadoDecisao.Aprovado, clienteId, null));
+
+        // Cobrança: o provedor simulado cria o Pix e Billing publica PaymentPending com a referência.
+        var cobranca = Montagem.PedidoCobranca(Guid.Parse(pronto["osId"]!.GetValue<string>()), Guid.Parse(pronto["filialId"]!.GetValue<string>()),
+            quoteId, pronto["amount"]!.GetValue<decimal>());
+        cobranca["correlationId"] = pronto["correlationId"]!.GetValue<string>();
+        await PublicarAsync(Cobranca, cobranca);
+        var (pendente, _) = await ReceberAsync(FilaTeste(PagamentoPendente));
+        Assert.Equal(cobranca["messageId"]!.GetValue<string>(), pendente["causationId"]!.GetValue<string>());
+        var referencia = pendente["providerReference"]!.GetValue<string>();
+
+        // O cliente paga; a notificação dispara a consulta e a aprovação sai uma vez.
+        _host.Services.GetRequiredService<ProvedorPagamentoSimulado>().DefinirStatus(referencia, "approved");
+        using (var escopo = _host.Services.CreateScope())
+            await escopo.ServiceProvider.GetRequiredService<ReconciliarPagamentoUseCase>()
+                .NotificacaoAsync(new NotificacaoRecebida(Guid.NewGuid().ToString(), referencia, "payment.updated"));
+        var (aprovado, _) = await ReceberAsync(FilaTeste(PagamentoAprovado));
+        Assert.Equal(pendente["paymentId"]!.GetValue<string>(), aprovado["paymentId"]!.GetValue<string>());
+
+        // Compensação: estorno total confirmado pelo provedor.
+        var estorno = new JsonObject
+        {
+            ["messageId"] = Guid.NewGuid().ToString(), ["messageType"] = "PaymentRefundRequested.v1", ["schemaVersion"] = 1, ["producer"] = "os",
+            ["occurredAtUtc"] = DateTimeOffset.UtcNow.ToString("O"), ["correlationId"] = pronto["correlationId"]!.GetValue<string>(),
+            ["osId"] = pronto["osId"]!.GetValue<string>(), ["filialId"] = pronto["filialId"]!.GetValue<string>(),
+            ["idempotencyKey"] = $"estorno:{pendente["paymentId"]}", ["paymentId"] = pendente["paymentId"]!.GetValue<string>(),
+            ["amount"] = aprovado["amount"]!.GetValue<decimal>(), ["currency"] = "BRL", ["reason"] = "Execução falhou."
+        };
+        await PublicarAsync(Estorno, estorno);
+        var (estornado, _) = await ReceberAsync(FilaTeste(Estornado));
+
+        Assert.All([pendente, aprovado, estornado], e => Assert.Equal(pronto["correlationId"]!.GetValue<string>(), e["correlationId"]!.GetValue<string>()));
+        Assert.DoesNotContain("cliente@exemplo.com", pendente.ToJsonString() + aprovado.ToJsonString() + estornado.ToJsonString());
+        await using var db = PostgresFixture.CriarContexto(_conexaoBanco);
+        Assert.Equal(StatusPagamento.Estornado, (await db.Pagamentos.SingleAsync()).Status);
     }
 
     private static string FilaTeste(string exchange) => $"teste.{exchange}";
