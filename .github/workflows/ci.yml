@@ -12,7 +12,7 @@ permissions:
 
 env:
   DOTNET_VERSION: '10.0.x'
-  COBERTURA_MINIMA: 80
+  COBERTURA_MINIMA: 99
 
 jobs:
   build-e-testes:
