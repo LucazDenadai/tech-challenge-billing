@@ -4,7 +4,7 @@ using OficinaMecanica.Billing.Application.Contratos.Saga;
 
 namespace OficinaMecanica.Billing.UnitTests.Contratos;
 
-// Comandos válidos de exemplo, um por canal consumido por Billing. Sem dados pessoais.
+// Comandos válidos de exemplo, um por canal consumido por Billing. Só dados fictícios.
 public static class MensagensExemplo
 {
     private const string Instante = "2026-10-12T12:00:00Z";
@@ -43,6 +43,21 @@ public static class MensagensExemplo
             ("items", new JsonArray(
                 new JsonObject { ["itemId"] = Id(), ["type"] = "Peca", ["description"] = "Filtro de óleo", ["quantity"] = 1, ["unitPrice"] = 45.90m },
                 new JsonObject { ["itemId"] = Id(), ["type"] = "Servico", ["description"] = "Troca de óleo", ["quantity"] = 1, ["unitPrice"] = 80m }))
+        ],
+        nameof(PaymentCreationRequested) =>
+        [
+            ("quoteId", Id()),
+            ("quoteVersion", 1),
+            ("amount", 125.90m),
+            ("currency", "BRL"),
+            ("payerEmail", "cliente@exemplo.com")
+        ],
+        nameof(PaymentRefundRequested) =>
+        [
+            ("paymentId", Id()),
+            ("amount", 125.90m),
+            ("currency", "BRL"),
+            ("reason", "Execução falhou após o pagamento.")
         ],
         _ => throw new ArgumentOutOfRangeException(nameof(tipo), tipo, "Sem exemplo para o tipo.")
     };

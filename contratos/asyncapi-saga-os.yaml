@@ -379,6 +379,10 @@ components:
             properties:
               amount: { $ref: '#/components/schemas/Money' }
               currency: { $ref: '#/components/schemas/Currency' }
+              payerEmail:
+                type: string
+                format: email
+                description: 'E-mail do cliente, exigido pelo Pix do Mercado Pago (ADR-019). Opcional no schema por compatibilidade (ADR-018); Billing recusa o comando sem ele. Único dado pessoal do pagador que trafega; CPF não.'
     PaymentPending:
       name: PaymentPending.v1
       summary: Tentativa criada no Mercado Pago. Não significa aprovação.

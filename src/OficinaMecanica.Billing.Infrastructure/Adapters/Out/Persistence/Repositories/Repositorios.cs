@@ -19,7 +19,7 @@ public class UnidadeDeTrabalho(AppDbContext context) : IUnidadeDeTrabalho
         }
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
         {
-            // Dois pedidos simultâneos criando o orçamento da mesma OS: o segundo refaz e encontra o primeiro.
+            // Dois pedidos simultâneos criando o mesmo orçamento, pagamento ou notificação: o segundo refaz e encontra o primeiro.
             throw new ConflitoConcorrenciaException(ex);
         }
     }

@@ -30,6 +30,20 @@ public abstract record MensagemOrcamento : MensagemSaga
     protected override void ValidarPayload(List<string> erros) => ExigirMinimo(erros, QuoteVersion, 1, "quoteVersion");
 }
 
+// PaymentRef = Envelope + paymentId + providerReference opcional.
+public abstract record PaymentRef : MensagemSaga
+{
+    public required Guid PaymentId { get; init; }
+    public string? ProviderReference { get; init; }
+}
+
+// RefundResult = Envelope + paymentId + providerRefundReference opcional.
+public abstract record RefundResult : MensagemSaga
+{
+    public required Guid PaymentId { get; init; }
+    public string? ProviderRefundReference { get; init; }
+}
+
 // QuoteDecision = Envelope + QuoteRef + decidedAtUtc.
 public abstract record QuoteDecision : MensagemOrcamento
 {

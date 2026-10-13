@@ -110,9 +110,11 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "Oficina Mecânica — Billing API",
         Version = "v1",
-        Description = "Serviço Billing da Fase 4: orçamento da OS e decisão do cliente. "
+        Description = "Serviço Billing da Fase 4: orçamento da OS, decisão do cliente e pagamento Pix pelo Mercado Pago. "
                       + "O orçamento nasce do comando QuoteRequested da Saga (AsyncAPI); a aprovação e a recusa são só do cliente dono da OS, "
-                      + "com o JWT emitido pela Lambda de CPF. Pagamento e Mercado Pago entram no CARD-39b."
+                      + "com o JWT emitido pela Lambda de CPF. A cobrança nasce do PaymentCreationRequested; o cliente consulta o código Pix "
+                      + "em /billing/pagamentos/meus. O webhook do Mercado Pago exige x-signature válido (ADR-019). "
+                      + "Com MercadoPago:Modo=Simulado, /billing/simulador simula o cliente pagando."
     });
 
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));

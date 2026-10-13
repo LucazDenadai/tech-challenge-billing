@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using OficinaMecanica.Billing.Application.Contratos.Saga;
 using OficinaMecanica.Billing.Domain.Orcamentos;
+using OficinaMecanica.Billing.Domain.Pagamentos;
 
 namespace OficinaMecanica.Billing.UnitTests.Contratos;
 
@@ -8,16 +9,6 @@ namespace OficinaMecanica.Billing.UnitTests.Contratos;
 // com o JSON Schema da spec AsyncAPI.
 public class ContratoAsyncApiTests
 {
-    // Canais de Billing na spec que entram no CARD-39b (pagamento e estorno).
-    private static readonly string[] _consumidosPendentes39b =
-        ["saga-os.payment-creation-requested.v1", "saga-os.payment-refund-requested.v1"];
-
-    private static readonly string[] _publicadosPendentes39b =
-    [
-        "saga-os.payment-pending.v1", "saga-os.payment-approved.v1", "saga-os.payment-declined.v1", "saga-os.payment-outcome-unknown.v1",
-        "saga-os.payment-refunded.v1", "saga-os.payment-refund-pending.v1", "saga-os.payment-refund-failed.v1"
-    ];
-
     public static TheoryData<string> Canais()
     {
         var dados = new TheoryData<string>();
@@ -39,7 +30,16 @@ public class ContratoAsyncApiTests
         ("item com tipo desconhecido", m => TrocarNoItem(m, "type", "Brinde")),
         ("item com itemId inválido", m => TrocarNoItem(m, "itemId", "item")),
         ("item sem descrição", m => TrocarNoItem(m, "description", "")),
-        ("item nulo", m => m["items"] is JsonArray itens && Substituir(itens))
+        ("item nulo", m => m["items"] is JsonArray itens && Substituir(itens)),
+        ("quoteVersion zero", m => Trocar(m, "quoteVersion", 0)),
+        ("paymentId não é UUID", m => Trocar(m, "paymentId", "pagamento")),
+        ("amount zero", m => Trocar(m, "amount", 0)),
+        ("amount com três casas", m => Trocar(m, "amount", 10.123m)),
+        ("amount em texto", m => Trocar(m, "amount", "125.90")),
+        // No QuoteRequested a moeda é recusa de negócio; nos comandos de pagamento é contrato.
+        ("currency minúscula", m => m.ContainsKey("amount") && Trocar(m, "currency", "brl")),
+        ("reason vazio", m => Trocar(m, "reason", "")),
+        ("payerEmail inválido", m => Trocar(m, "payerEmail", "nao-e-email"))
     ];
 
     // Mutações de negócio: a spec rejeita, mas Billing lê o pedido e responde QuoteRejected (ADR-017),
@@ -60,25 +60,25 @@ public class ContratoAsyncApiTests
         _ => throw new ArgumentOutOfRangeException(nameof(caso))
     };
 
-    // Campos obrigatórios na spec cuja ausência Billing trata como recusa de negócio.
+    // Campos obrigatórios na spec do QuoteRequested cuja ausência Billing trata como recusa de negócio.
     private static readonly string[] _obrigatoriosTratadosComoNegocio = ["currency"];
 
     [Fact]
-    public void Consumidos_MaisPendentesDo39b_CorrespondemAosCanaisDaSpecCujoConsumidorEBilling()
+    public void Consumidos_CorrespondemAosCanaisDaSpecCujoConsumidorEBilling()
     {
         var spec = SpecAsyncApi.CanaisConsumidosPorBilling();
 
-        Assert.Equal(spec.Keys.Order(), CatalogoCanaisBilling.Consumidos.Select(c => c.Endereco).Concat(_consumidosPendentes39b).Order());
+        Assert.Equal(spec.Keys.Order(), CatalogoCanaisBilling.Consumidos.Select(c => c.Endereco).Order());
         foreach (var canal in CatalogoCanaisBilling.Consumidos)
             Assert.Equal(SpecAsyncApi.NomeVersionado(spec[canal.Endereco]), canal.MessageType);
     }
 
     [Fact]
-    public void Publicados_MaisPendentesDo39b_CorrespondemAosCanaisDaSpecCujoProdutorEBilling()
+    public void Publicados_CorrespondemAosCanaisDaSpecCujoProdutorEBilling()
     {
         var spec = SpecAsyncApi.CanaisProduzidosPorBilling();
 
-        Assert.Equal(spec.Keys.Order(), CatalogoCanaisBilling.Publicados.Select(c => c.Endereco).Concat(_publicadosPendentes39b).Order());
+        Assert.Equal(spec.Keys.Order(), CatalogoCanaisBilling.Publicados.Select(c => c.Endereco).Order());
         foreach (var canal in CatalogoCanaisBilling.Publicados)
             Assert.Equal(SpecAsyncApi.NomeVersionado(spec[canal.Endereco]), canal.MessageType);
     }
@@ -115,7 +115,8 @@ public class ContratoAsyncApiTests
         var canal = CatalogoCanaisBilling.ObterConsumido(endereco)!;
         var aceitos = new List<string>();
 
-        foreach (var campo in SpecAsyncApi.CamposObrigatorios(NomeNaSpec(canal)).Except(_obrigatoriosTratadosComoNegocio))
+        var tratadosComoNegocio = endereco == "saga-os.quote-requested.v1" ? _obrigatoriosTratadosComoNegocio : [];
+        foreach (var campo in SpecAsyncApi.CamposObrigatorios(NomeNaSpec(canal)).Except(tratadosComoNegocio))
         {
             var exemplo = MensagensExemplo.Criar(canal);
             exemplo.Remove(campo);
@@ -206,6 +207,72 @@ public class ContratoAsyncApiTests
         Assert.Null(json["idempotencyKey"]);
         // Só a resposta ao comando tem causationId; decisão e expiração não vêm de uma mensagem.
         Assert.Equal(caso is "pronto" or "recusado", json["causationId"] is not null);
+    }
+
+    [Fact]
+    public void PaymentCreationRequested_SemPayerEmail_AceitoPelaSpecEPeloLeitor()
+    {
+        // Campo opcional na spec (ADR-018); quem recusa a falta dele é o caso de uso, mandando o comando para a DLQ (ADR-019).
+        var canal = CatalogoCanaisBilling.ObterConsumido("saga-os.payment-creation-requested.v1")!;
+        var exemplo = MensagensExemplo.Criar(canal);
+        exemplo.Remove("payerEmail");
+
+        Assert.True(SpecAsyncApi.Valida(NomeNaSpec(canal), exemplo));
+        Assert.True(LeitorMensagemSaga.Ler(canal, MensagensExemplo.Bytes(exemplo)).Valida);
+    }
+
+    public static TheoryData<EventoPagamento> EventosDePagamento() => new(Enum.GetValues<EventoPagamento>());
+
+    [Theory]
+    [MemberData(nameof(EventosDePagamento))]
+    public void EventoDePagamento_SerializadoConformeASpec(EventoPagamento evento)
+    {
+        var pagamento = PagamentoQuePublica(evento);
+
+        var mensagem = RespostaSaga.DoPagamento(pagamento, evento);
+        var json = JsonNode.Parse(RespostaSaga.Serializar(mensagem))!;
+        var nome = SpecAsyncApi.CanaisProduzidosPorBilling()[CatalogoCanaisBilling.Publicado(mensagem.GetType()).Endereco];
+
+        Assert.True(SpecAsyncApi.Valida(nome, json), $"A spec rejeitou {mensagem.MessageType}: {json.ToJsonString()}");
+        Assert.Equal(pagamento.Id.ToString(), json["paymentId"]!.GetValue<string>());
+        Assert.Equal(pagamento.CorrelationId.ToString(), json["correlationId"]!.GetValue<string>());
+        // Nenhum dado do pagador sai em evento.
+        Assert.DoesNotContain("cliente@exemplo.com", json.ToJsonString());
+        // Resposta a comando tem causationId; aprovação e recusa vêm do provedor.
+        Assert.Equal(evento is not (EventoPagamento.Aprovado or EventoPagamento.Recusado), json["causationId"] is not null);
+    }
+
+    // Leva um pagamento até o estado em que ele publica o evento pedido.
+    private static Pagamento PagamentoQuePublica(EventoPagamento evento)
+    {
+        var agora = DateTimeOffset.UtcNow;
+        var intervalo = TimeSpan.FromMinutes(2);
+        var pagamento = Pagamento.Criar(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, 125.90m, "BRL",
+            "pagamento:1", Guid.NewGuid(), "cliente@exemplo.com", agora, TimeSpan.FromMinutes(30), intervalo);
+        var pendente = new PagamentoNoProvedor("123456", pagamento.Id.ToString(), 125.90m, "BRL", StatusNoProvedor.Pendente, "pending", null, "pix", null);
+
+        if (evento == EventoPagamento.ResultadoDesconhecido)
+            return pagamento;
+
+        pagamento.Reconciliar(pendente, agora, intervalo);
+        if (evento == EventoPagamento.Recusado)
+            pagamento.Reconciliar(pendente with { Status = StatusNoProvedor.Recusado, StatusOriginal = "rejected" }, agora, intervalo);
+        if (evento is EventoPagamento.Pendente or EventoPagamento.Recusado)
+            return pagamento;
+
+        pagamento.Reconciliar(pendente with { Status = StatusNoProvedor.Aprovado, StatusOriginal = "approved", AprovadoEm = agora }, agora, intervalo);
+        if (evento == EventoPagamento.Aprovado)
+            return pagamento;
+
+        pagamento.SolicitarEstorno("estorno:1", Guid.NewGuid(), 125.90m, "BRL", "Execução falhou.", agora, intervalo);
+        var status = evento switch
+        {
+            EventoPagamento.Estornado => StatusEstornoNoProvedor.Aprovado,
+            EventoPagamento.EstornoFalhou => StatusEstornoNoProvedor.Recusado,
+            _ => StatusEstornoNoProvedor.Pendente
+        };
+        pagamento.RegistrarEstorno(new EstornoNoProvedor("r-1", status, "x"), agora, intervalo);
+        return pagamento;
     }
 
     private static QuoteDecision Decidido(Orcamento orcamento, ResultadoDecisao resultado, DateTimeOffset agora)

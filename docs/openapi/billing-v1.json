@@ -2,7 +2,7 @@
   "openapi": "3.0.1",
   "info": {
     "title": "Oficina Mecânica — Billing API",
-    "description": "Serviço Billing da Fase 4: orçamento da OS e decisão do cliente. O orçamento nasce do comando QuoteRequested da Saga (AsyncAPI); a aprovação e a recusa são só do cliente dono da OS, com o JWT emitido pela Lambda de CPF. Pagamento e Mercado Pago entram no CARD-39b.",
+    "description": "Serviço Billing da Fase 4: orçamento da OS, decisão do cliente e pagamento Pix pelo Mercado Pago. O orçamento nasce do comando QuoteRequested da Saga (AsyncAPI); a aprovação e a recusa são só do cliente dono da OS, com o JWT emitido pela Lambda de CPF. A cobrança nasce do PaymentCreationRequested; o cliente consulta o código Pix em /billing/pagamentos/meus. O webhook do Mercado Pago exige x-signature válido (ADR-019). Com MercadoPago:Modo=Simulado, /billing/simulador simula o cliente pagando.",
     "version": "v1"
   },
   "paths": {
@@ -647,6 +647,400 @@
           }
         }
       }
+    },
+    "/billing/pagamentos/meus": {
+      "get": {
+        "tags": [
+          "Pagamentos"
+        ],
+        "summary": "Pagamentos do cliente do token, mais recentes primeiro, com o código Pix.",
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/billing/pagamentos/os/{osId}": {
+      "get": {
+        "tags": [
+          "Pagamentos"
+        ],
+        "summary": "Pagamentos de uma OS, para o atendimento informar o cliente.",
+        "parameters": [
+          {
+            "name": "osId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PagamentoResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/billing/simulador/pagamentos/{referencia}/status": {
+      "post": {
+        "tags": [
+          "SimuladorPagamentos"
+        ],
+        "summary": "Muda o status do pagamento no provedor simulado e reconcilia, como faria o webhook.",
+        "parameters": [
+          {
+            "name": "referencia",
+            "in": "path",
+            "description": "providerReference do pagamento (campo do PaymentPending).",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Status novo.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefinirStatusSimuladoRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefinirStatusSimuladoRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefinirStatusSimuladoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Status aplicado no provedor simulado; o corpo traz o resultado da reconciliação.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoSimulacaoResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoSimulacaoResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoSimulacaoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Status não suportado pelo simulador.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Fora do modo Simulado, ou referência inexistente no provedor simulado.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/billing/pagamentos/webhook/mercadopago": {
+      "post": {
+        "tags": [
+          "WebhookMercadoPago"
+        ],
+        "summary": "Recebe a notificação de pagamento do Mercado Pago.",
+        "description": "Exige os cabeçalhos `x-signature` (`ts=...,v1=...`) e `x-request-id` e o parâmetro `data.id`.\r\nO mesmo `x-request-id` reenviado não é processado de novo. Notificações de outros tipos são ignoradas.",
+        "parameters": [
+          {
+            "name": "data.id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-request-id",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notificação recebida (processada, repetida ou ignorada)."
+          },
+          "400": {
+            "description": "Sem data.id ou sem x-request-id.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Assinatura ausente, inválida ou fora da tolerância de tempo.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -681,6 +1075,20 @@
           "motivo": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DefinirStatusSimuladoRequest": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "minLength": 1,
+            "type": "string",
+            "description": "Status no padrão do Mercado Pago: approved, rejected, cancelled, pending ou in_process."
           }
         },
         "additionalProperties": false
@@ -749,6 +1157,87 @@
         },
         "additionalProperties": false
       },
+      "PagamentoResponse": {
+        "type": "object",
+        "properties": {
+          "paymentId": {
+            "type": "string",
+            "description": "Identificador do pagamento nos contratos da Saga.",
+            "format": "uuid"
+          },
+          "osId": {
+            "type": "string",
+            "description": "OS cobrada.",
+            "format": "uuid"
+          },
+          "quoteId": {
+            "type": "string",
+            "description": "Orçamento cobrado.",
+            "format": "uuid"
+          },
+          "quoteVersion": {
+            "type": "integer",
+            "description": "Versão aprovada do orçamento.",
+            "format": "int32"
+          },
+          "valor": {
+            "type": "number",
+            "description": "Valor cobrado, igual ao da versão aprovada.",
+            "format": "double"
+          },
+          "moeda": {
+            "type": "string",
+            "description": "Sempre BRL.",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/StatusPagamento"
+          },
+          "codigoPix": {
+            "type": "string",
+            "description": "Código Pix \"copia e cola\". Válido até ExpiraEm.",
+            "nullable": true
+          },
+          "urlPagamento": {
+            "type": "string",
+            "description": "Página de pagamento do provedor, com o QR Code.",
+            "nullable": true
+          },
+          "expiraEm": {
+            "type": "string",
+            "description": "Fim da validade do Pix. Depois disso o pagamento é recusado.",
+            "format": "date-time"
+          },
+          "aprovadoEm": {
+            "type": "string",
+            "description": "Quando o provedor aprovou.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "motivoRecusa": {
+            "type": "string",
+            "description": "Status do provedor que recusou ou cancelou o pagamento.",
+            "nullable": true
+          },
+          "estornadoEm": {
+            "type": "string",
+            "description": "Quando o estorno foi confirmado.",
+            "format": "date-time",
+            "nullable": true
+          },
+          "motivoFalhaEstorno": {
+            "type": "string",
+            "description": "Por que o estorno falhou.",
+            "nullable": true
+          },
+          "reconciliacaoManual": {
+            "type": "boolean",
+            "description": "O pagamento parou esperando ação manual (sem resposta do provedor ou estado fora do fluxo)."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Pagamento de uma OS, com o que o cliente precisa para pagar o Pix."
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -799,6 +1288,49 @@
         "enum": [
           "Aprovado",
           "Recusado"
+        ],
+        "type": "string"
+      },
+      "ResultadoNotificacao": {
+        "enum": [
+          "Aplicada",
+          "SemMudanca",
+          "Desconhecido",
+          "Divergente",
+          "ForaDoFluxo",
+          "FalhaTecnica"
+        ],
+        "type": "string"
+      },
+      "ResultadoSimulacaoResponse": {
+        "type": "object",
+        "properties": {
+          "referencia": {
+            "type": "string",
+            "description": "providerReference do pagamento.",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "Status aplicado no provedor simulado.",
+            "nullable": true
+          },
+          "resultado": {
+            "$ref": "#/components/schemas/ResultadoNotificacao"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Resultado da simulação."
+      },
+      "StatusPagamento": {
+        "enum": [
+          "Solicitado",
+          "Pendente",
+          "Aprovado",
+          "Recusado",
+          "EstornoPendente",
+          "Estornado",
+          "EstornoFalhou"
         ],
         "type": "string"
       },

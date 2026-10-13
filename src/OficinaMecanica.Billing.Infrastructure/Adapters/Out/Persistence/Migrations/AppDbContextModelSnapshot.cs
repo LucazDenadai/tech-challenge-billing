@@ -197,6 +197,207 @@ namespace OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence.Migrat
                         });
                 });
 
+            modelBuilder.Entity("OficinaMecanica.Billing.Domain.Pagamentos.NotificacaoPagamento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Acao")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("AtualizadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Detalhe")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("PagamentoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecebidaEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReferenciaRecurso")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RequestId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Resultado")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PagamentoId");
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.ToTable("NotificacoesPagamento", (string)null);
+                });
+
+            modelBuilder.Entity("OficinaMecanica.Billing.Domain.Pagamentos.Pagamento", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AprovadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("AtualizadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ClienteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CodigoPix")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailPagador")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
+                    b.Property<DateTimeOffset?>("EstornadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EstornoIdempotencyKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("EstornoPendentePublicado")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("ExpiraEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FalhasTecnicas")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("FilialId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("MensagemCriacaoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MensagemEstornoId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Moeda")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("MotivoEstorno")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MotivoFalhaEstorno")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MotivoReconciliacaoManual")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MotivoRecusa")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("OsId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ProximaVerificacaoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("QuoteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("QuoteVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ReconciliacaoManual")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ReferenciaEstorno")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ReferenciaProvedor")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("ResultadoDesconhecidoPublicado")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("StatusProvedor")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("UrlPagamento")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("Valor")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<uint>("Versao")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClienteId");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OsId");
+
+                    b.HasIndex("ProximaVerificacaoEm")
+                        .HasFilter("\"ProximaVerificacaoEm\" IS NOT NULL AND NOT \"ReconciliacaoManual\"");
+
+                    b.HasIndex("ReferenciaProvedor")
+                        .IsUnique()
+                        .HasFilter("\"ReferenciaProvedor\" IS NOT NULL");
+
+                    b.HasIndex("QuoteId", "QuoteVersion")
+                        .IsUnique();
+
+                    b.ToTable("Pagamentos", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Pagamentos_Valor", "\"Valor\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("OficinaMecanica.Billing.Infrastructure.Adapters.Out.Persistence.Mensageria.MensagemInbox", b =>
                 {
                     b.Property<Guid>("MessageId")

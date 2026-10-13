@@ -111,6 +111,7 @@ public class OrcamentosController(ConsultarOrcamentosUseCase consultar, DecidirO
 public static class Perfis
 {
     public const string Cliente = "Cliente";
+    public const string Admin = "Admin";
     public const string AdminEAtendente = "Admin,Atendente";
     public const string ClienteEAtendimento = "Cliente,Admin,Atendente";
 }
