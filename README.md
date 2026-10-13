@@ -57,6 +57,23 @@ Sem `MercadoPago__*`, o serviço sobe no modo `Simulado`: a cobrança Pix é cri
 
 Swagger em `/billing/swagger`, liveness em `/billing/health` e readiness (PostgreSQL e, se habilitado, RabbitMQ) em `/billing/ready`.
 
+### Executar no Docker
+
+Sem SDK do .NET no host, a API também sobe pelo Compose, em `http://localhost:8082` e no modo `Simulado`:
+
+```sh
+docker compose --profile api up -d --build
+```
+
+Para o sandbox do Mercado Pago, `docker-compose.sandbox.yml` liga o modo `MercadoPago` e sobe um Quick Tunnel da Cloudflare, que dá ao webhook uma URL pública sem conta. `MercadoPago__AccessToken` e `MercadoPago__WebhookSecret` vêm do ambiente do host; sem eles, o Compose recusa subir.
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.sandbox.yml logs tunel   # https://<aleatório>.trycloudflare.com
+```
+
+Cadastre `<url do túnel>/billing/pagamentos/webhook/mercadopago` no painel. A URL muda a cada start do túnel.
+
 ## Quem decide o orçamento
 
 Só o **cliente dono da OS**. A aprovação e a recusa exigem token com `role=Cliente` e a claim `cliente_id` igual ao cliente do orçamento, que chega no `QuoteRequested`.
