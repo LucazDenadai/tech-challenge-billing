@@ -25,7 +25,7 @@ public class OrcamentoUseCasesTests
     public OrcamentoUseCasesTests()
     {
         _solicitar = new SolicitarOrcamentoUseCase(_store, new ConfiguracaoOrcamento(_validade), _relogio);
-        _processar = new ProcessarMensagemSagaUseCase(_store, _store, _store, _store, _solicitar, NullLogger<ProcessarMensagemSagaUseCase>.Instance);
+        _processar = new MontagemPagamentos(_store, _relogio, _solicitar).Processar;
         _decidir = new DecidirOrcamentoUseCase(_store, _store, _store, _relogio, NullLogger<DecidirOrcamentoUseCase>.Instance);
         _expirar = new ExpirarOrcamentosUseCase(_store, _store, _store, _relogio, NullLogger<ExpirarOrcamentosUseCase>.Instance);
         _consultar = new ConsultarOrcamentosUseCase(_store);
