@@ -24,7 +24,7 @@ builder.Logging.AddJsonConsole(o =>
 });
 
 // ── OpenTelemetry (traces OTLP, métricas Prometheus) ───────────────────────────
-builder.AddOpenTelemetry("OficinaMecanica.Billing");
+builder.AddOpenTelemetry("billing");
 
 // ── Infrastructure (banco de Billing, casos de uso, expiração) e mensageria da Saga ─
 builder.Services.AddInfrastructure(builder.Configuration);

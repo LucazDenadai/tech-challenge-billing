@@ -66,9 +66,11 @@ public class DespachanteOutboxHostedService(
                     mensagem.CorrelationId, mensagem.Payload, mensagem.TraceParent), ct);
                 mensagem.PublicadaEmUtc = DateTimeOffset.UtcNow;
                 mensagem.UltimoErro = null;
+                TelemetriaMensageria.Publicacao(sucesso: true);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
+                TelemetriaMensageria.Publicacao(sucesso: false);
                 mensagem.Tentativas++;
                 mensagem.UltimoErro = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
                 await db.SaveChangesAsync(ct);

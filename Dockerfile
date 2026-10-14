@@ -15,6 +15,9 @@ RUN dotnet publish src/OficinaMecanica.Billing.API/OficinaMecanica.Billing.API.c
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+# Versão da imagem para a telemetria (service.version); o CI passa sha-<commit>.
+ARG VERSAO=local
+ENV Servico__Versao=$VERSAO
 COPY --from=build --chown=app:app --chmod=755 /app/publish .
 USER app
 EXPOSE 8080

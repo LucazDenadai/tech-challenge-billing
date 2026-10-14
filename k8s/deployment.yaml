@@ -12,6 +12,11 @@ spec:
   template:
     metadata:
       labels: { app: billing }
+      annotations:
+        # Prometheus da stack de observabilidade (CARD-42b).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
       containers:
         - name: billing

@@ -166,6 +166,7 @@ public class ConsumidorSagaHostedService(
         {
             await _canal!.BasicPublishAsync(string.Empty, Dlq(canal), mandatory: false, propriedades, entrega.Body);
             await _canal.BasicAckAsync(entrega.DeliveryTag, multiple: false);
+            TelemetriaMensageria.Dlq(canal.Endereco);
             logger.LogWarning("Mensagem enviada para a DLQ {Dlq}. MessageType={MessageType} Motivo={Motivo}",
                 Dlq(canal), resultado.MessageType, resultado.Motivo);
         }
