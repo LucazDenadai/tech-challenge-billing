@@ -7,9 +7,12 @@ namespace OficinaMecanica.Billing.Infrastructure.Adapters.Out.Pagamentos;
 // Provedor em memória para MercadoPago:Modo=Simulado (ADR-019). Imita o que Billing usa do Mercado Pago:
 // criação idempotente pela chave, Pix pendente, consulta, busca pelo external_reference e estorno idempotente.
 // O status muda só pela rota do simulador (cliente pagou, recusou ou o Pix expirou). Os dados somem ao reiniciar.
-public class ProvedorPagamentoSimulado : IProvedorPagamento
+public class ProvedorPagamentoSimulado(TimeProvider relogio) : IProvedorPagamento
 {
-    private long _proximaReferencia = 900_000_000;
+    // A numeração começa no instante da subida, em milissegundos: os pagamentos ficam no banco do Billing e o
+    // simulador reinicia do zero. Com um valor fixo, o primeiro pagamento depois de um restart repetia a referência
+    // de um pagamento antigo e violava IX_Pagamentos_ReferenciaProvedor (achado na demonstração do CARD-42b).
+    private long _proximaReferencia = relogio.GetUtcNow().ToUnixTimeMilliseconds();
     private readonly ConcurrentDictionary<string, PagamentoNoProvedor> _pagamentos = new();
     private readonly ConcurrentDictionary<string, string> _referenciaPorChave = new();
     private readonly ConcurrentDictionary<string, EstornoNoProvedor> _estornoPorChave = new();
