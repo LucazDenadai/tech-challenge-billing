@@ -86,6 +86,15 @@ public class ConsumidorSagaHostedService(
         atividade?.SetTag("messaging.destination.name", canal.Endereco);
         atividade?.SetTag("messaging.operation.type", "process");
 
+        // O escopo abre antes do processamento: os logs do caso de uso (as transições da Saga, por exemplo) também
+        // levam o CorrelationId (CARD-42b). Vem das propriedades da mensagem; o corpo é validado depois, pelo contrato.
+        using var escopoLog = logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["CorrelationId"] = Guid.TryParse(entrega.BasicProperties.CorrelationId, out var idCorrelacao) ? idCorrelacao : null,
+            ["MessageId"] = Guid.TryParse(entrega.BasicProperties.MessageId, out var idMensagem) ? idMensagem : null,
+            ["Canal"] = canal.Endereco
+        });
+
         ResultadoProcessamento resultado;
         try
         {
@@ -100,13 +109,6 @@ public class ConsumidorSagaHostedService(
 
         atividade?.SetTag("messaging.message.id", resultado.MessageId?.ToString());
         atividade?.SetTag("correlation_id", resultado.CorrelationId?.ToString());
-
-        using var escopoLog = logger.BeginScope(new Dictionary<string, object?>
-        {
-            ["CorrelationId"] = resultado.CorrelationId,
-            ["MessageId"] = resultado.MessageId,
-            ["Canal"] = canal.Endereco
-        });
 
         if (resultado.Status == StatusProcessamento.Rejeitada)
         {
