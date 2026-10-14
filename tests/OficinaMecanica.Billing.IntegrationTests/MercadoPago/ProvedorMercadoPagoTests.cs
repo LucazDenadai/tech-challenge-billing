@@ -204,7 +204,7 @@ public class ProvedorMercadoPagoTests
     [Fact]
     public async Task Simulado_CriacaoEEstornoIdempotentes()
     {
-        var simulado = new ProvedorPagamentoSimulado();
+        var simulado = new ProvedorPagamentoSimulado(TimeProvider.System);
         var id = Guid.NewGuid();
 
         var primeira = await simulado.CriarAsync(Cobranca(id));
