@@ -438,4 +438,133 @@ public class PagamentoUseCasesTests
         Assert.Equal(StatusProcessamento.Rejeitada, inexistente.Status);
         Assert.Empty(_m.Provedor.ChavesEstorno);
     }
+
+    // ── Bordas (CARD-44) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CanalQueBillingNaoConsome_Rejeitado()
+    {
+        var resultado = await _m.Processar.ExecutarAsync("saga-os.canal-de-outro.v1", MensagensExemplo.Bytes(PedidoCobranca()));
+
+        Assert.Equal(StatusProcessamento.Rejeitada, resultado.Status);
+        Assert.Contains("não é consumido por Billing", resultado.Motivo);
+    }
+
+    [Fact]
+    public async Task MesmaChaveParaOutroOrcamento_RejeitadaSemNovaCobranca()
+    {
+        var outro = _orcamento with { QuoteId = Guid.NewGuid() };
+        _m.Orcamentos.Aprovados.Add(outro);
+        await Processar(CanalCobranca, PedidoCobranca());
+
+        var resultado = await Processar(CanalCobranca, PedidoCobranca(p => p["quoteId"] = outro.QuoteId.ToString()));
+
+        Assert.Equal(StatusProcessamento.Rejeitada, resultado.Status);
+        Assert.Contains("outro orçamento", resultado.Motivo);
+        Assert.Single(_m.Provedor.Criacoes);
+    }
+
+    [Fact]
+    public async Task PedidoRepetidoDepoisDaRecusa_RepublicaARecusa()
+    {
+        var pagamento = await PagamentoPendente();
+        _m.Provedor.Mudar(pagamento.ReferenciaProvedor!, StatusNoProvedor.Recusado, "rejected");
+        await Notificar(pagamento.ReferenciaProvedor!);
+
+        await Processar(CanalCobranca, PedidoCobranca());
+
+        Assert.Equal(2, Publicadas<PaymentDeclined>().Count());
+        Assert.Single(_m.Provedor.Criacoes);
+    }
+
+    [Fact]
+    public async Task PedidoRepetidoComCobrancaAindaSemResposta_SemNovoEvento()
+    {
+        _m.Provedor.FalhasCriacao.Enqueue("Timeout.");
+        _m.Provedor.FalhasCriacao.Enqueue("Timeout.");
+        await Processar(CanalCobranca, PedidoCobranca());
+        var antes = _store.Publicadas.Count;
+
+        var resultado = await Processar(CanalCobranca, PedidoCobranca());
+
+        Assert.Equal(StatusProcessamento.Processada, resultado.Status);
+        Assert.Equal(StatusPagamento.Solicitado, _m.Pagamentos.Pagamentos.Single().Status);
+        Assert.Equal(antes, _store.Publicadas.Count);
+    }
+
+    [Fact]
+    public async Task EstornoDePagamentoDeOutraOs_Rejeitado()
+    {
+        var pagamento = await PagamentoAprovado();
+
+        var resultado = await Processar(CanalEstorno, PedidoEstorno(pagamento, p => p["osId"] = Guid.NewGuid().ToString()));
+
+        Assert.Equal(StatusProcessamento.Rejeitada, resultado.Status);
+        Assert.Contains("não pertence à OS", resultado.Motivo);
+        Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
+    }
+
+    [Fact]
+    public async Task ChamadasParaPagamentoInexistenteOuJaResolvido_NaoFazemNada()
+    {
+        var pagamento = await PagamentoAprovado();
+        var criacoes = _m.Provedor.Criacoes.Count;
+
+        await _m.Cobrar.ExecutarAsync(Guid.NewGuid(), buscarAntes: false);
+        await _m.Cobrar.ExecutarAsync(pagamento.Id, buscarAntes: false);
+        await _m.Estornar.ExecutarAsync(Guid.NewGuid());
+        await _m.Estornar.ExecutarAsync(pagamento.Id);
+        await _m.Reconciliar.ConsultarAsync(Guid.NewGuid());
+        await _m.Reconciliar.ConsultarAsync(pagamento.Id);
+
+        Assert.Equal(criacoes, _m.Provedor.Criacoes.Count);
+        Assert.Empty(_m.Provedor.ChavesEstorno);
+        Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
+    }
+
+    [Fact]
+    public async Task Consulta_PagamentoSumiuDoProvedor_FicaParaAcaoManual()
+    {
+        var pagamento = await PagamentoPendente();
+        _m.Provedor.Pagamentos.Remove(pagamento.ReferenciaProvedor!);
+
+        await _m.Reconciliar.ConsultarAsync(pagamento.Id);
+
+        Assert.True(pagamento.ReconciliacaoManual);
+        Assert.Equal(StatusPagamento.Pendente, pagamento.Status);
+    }
+
+    [Fact]
+    public async Task Consulta_ValorDivergente_FicaParaAcaoManualSemAprovar()
+    {
+        var pagamento = await PagamentoPendente();
+        _m.Provedor.Mudar(pagamento.ReferenciaProvedor!, StatusNoProvedor.Aprovado, "approved", valor: 1m);
+
+        await _m.Reconciliar.ConsultarAsync(pagamento.Id);
+
+        Assert.True(pagamento.ReconciliacaoManual);
+        Assert.Equal(StatusPagamento.Pendente, pagamento.Status);
+        Assert.Empty(Publicadas<PaymentApproved>());
+    }
+
+    [Fact]
+    public async Task Notificacao_ReferenciaExternaQueNaoEPagamento_Desconhecida()
+    {
+        _m.Provedor.Pagamentos["externo-1"] = new PagamentoNoProvedor("externo-1", "pedido-da-loja", 10m, "BRL",
+            StatusNoProvedor.Aprovado, "approved", DateTimeOffset.UtcNow, null, null);
+
+        Assert.Equal(ResultadoNotificacao.Desconhecido, await Notificar("externo-1"));
+        Assert.Empty(_store.Publicadas);
+    }
+
+    [Fact]
+    public async Task Notificacao_StatusForaDoFluxo_FicaParaAcaoManual()
+    {
+        var pagamento = await PagamentoAprovado();
+        _m.Provedor.Mudar(pagamento.ReferenciaProvedor!, StatusNoProvedor.ForaDoFluxo, "charged_back");
+
+        Assert.Equal(ResultadoNotificacao.ForaDoFluxo, await Notificar(pagamento.ReferenciaProvedor!));
+        Assert.True(pagamento.ReconciliacaoManual);
+        Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
+    }
 }
