@@ -194,4 +194,41 @@ public class OrcamentoTests
         Assert.Null(orcamento.ExpirarSeVencido(_agora + _validade));
         Assert.Equal(StatusVersaoOrcamento.Aprovada, orcamento.VersaoVigente.Status);
     }
+
+    // ── Bordas (CARD-44) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Criar_SemOsClienteOuFilial_Recusado()
+    {
+        ItemPrecificado[] itens = [Item()];
+
+        Assert.Throws<ArgumentException>(() => Orcamento.Criar(Guid.Empty, _clienteId, Guid.NewGuid(), Guid.NewGuid(), "q", "BRL", _agora, itens, _agora, _validade));
+        Assert.Throws<ArgumentException>(() => Orcamento.Criar(Guid.NewGuid(), Guid.Empty, Guid.NewGuid(), Guid.NewGuid(), "q", "BRL", _agora, itens, _agora, _validade));
+        Assert.Throws<ArgumentException>(() => Orcamento.Criar(Guid.NewGuid(), _clienteId, Guid.Empty, Guid.NewGuid(), "q", "BRL", _agora, itens, _agora, _validade));
+    }
+
+    [Fact]
+    public void Criar_SemChaveOuComValidadeNaoPositiva_Recusado()
+    {
+        ItemPrecificado[] itens = [Item()];
+
+        Assert.Throws<ArgumentException>(() => Orcamento.Criar(Guid.NewGuid(), _clienteId, Guid.NewGuid(), Guid.NewGuid(), " ", "BRL", _agora, itens, _agora, _validade));
+        Assert.Throws<ArgumentException>(() => Orcamento.Criar(Guid.NewGuid(), _clienteId, Guid.NewGuid(), Guid.NewGuid(), "q", "BRL", _agora, itens, _agora, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void Criar_ItemSemDescricao_Recusado()
+        => Assert.Throws<OrcamentoInvalidoException>(() => Criar(new ItemPrecificado(Guid.NewGuid(), TipoItemOrcamento.Peca, " ", 1, 10m)));
+
+    // Guarda interna: todos os chamadores conferem antes, mas a versão não depende disso para não mudar depois de encerrada.
+    [Fact]
+    public void Encerrar_VersaoJaDecidida_Recusado()
+    {
+        var orcamento = Criar();
+        var versao = orcamento.VersaoVigente;
+        orcamento.Decidir(1, ResultadoDecisao.Aprovado, _clienteId, null, _agora);
+
+        Assert.Throws<InvalidOperationException>(() => versao.Encerrar(StatusVersaoOrcamento.Expirada, _agora));
+        Assert.Equal(StatusVersaoOrcamento.Aprovada, versao.Status);
+    }
 }

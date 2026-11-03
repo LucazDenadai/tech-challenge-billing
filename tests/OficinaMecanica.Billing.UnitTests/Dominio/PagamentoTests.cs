@@ -340,4 +340,43 @@ public class PagamentoTests
         Assert.Equal(ResultadoReconciliacao.ForaDoFluxo, resultado.Resultado);
         Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
     }
+
+    // ── Bordas (CARD-44) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Criar_SemReferenciaObrigatoria_Recusado()
+        => Assert.Throws<PagamentoInvalidoException>(() => Pagamento.Criar(Guid.Empty, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1,
+            10m, "BRL", "pagamento-1", Guid.NewGuid(), null, _agora, _expiracao, _intervalo));
+
+    [Fact]
+    public void EventoDoEstornoAtual_SegueOEstadoDoEstorno()
+    {
+        var pendente = ComEstornoPedido();
+        Assert.Equal(EventoPagamento.EstornoPendente, pendente.EventoDoEstornoAtual);
+
+        pendente.RegistrarEstorno(new EstornoNoProvedor("r-1", StatusEstornoNoProvedor.Recusado, "rejected"), _agora, _intervalo);
+        Assert.Equal(StatusPagamento.EstornoFalhou, pendente.Status);
+        Assert.Equal(EventoPagamento.EstornoFalhou, pendente.EventoDoEstornoAtual);
+
+        Assert.Throws<InvalidOperationException>(() => Aprovado().EventoDoEstornoAtual);
+    }
+
+    [Fact]
+    public void RegistrarEstorno_SemEstornoPendente_Ignorado()
+    {
+        var pagamento = Aprovado();
+
+        Assert.Null(pagamento.RegistrarEstorno(new EstornoNoProvedor("r-1", StatusEstornoNoProvedor.Aprovado, "approved"), _agora, _intervalo));
+        Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
+    }
+
+    [Fact]
+    public void Notificacao_DetalheLongoCortadoEm500()
+    {
+        var longa = new NotificacaoPagamento("req-1", "123", "payment.updated", _agora, ResultadoNotificacao.Aplicada, null, new string('x', 800));
+        var curta = new NotificacaoPagamento("req-2", "123", null, _agora, ResultadoNotificacao.SemMudanca, null, null);
+
+        Assert.Equal(500, longa.Detalhe!.Length);
+        Assert.Null(curta.Detalhe);
+    }
 }
