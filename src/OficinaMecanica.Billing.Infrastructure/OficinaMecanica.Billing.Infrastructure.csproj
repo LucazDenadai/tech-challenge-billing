@@ -28,4 +28,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Os testes exercitam a leitura do contexto do trace no consumidor (CARD-44). -->
+    <InternalsVisibleTo Include="OficinaMecanica.Billing.IntegrationTests" />
+  </ItemGroup>
+
 </Project>
