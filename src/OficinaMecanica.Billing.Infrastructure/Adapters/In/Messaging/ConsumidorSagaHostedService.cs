@@ -138,8 +138,10 @@ public class ConsumidorSagaHostedService(
                 if (tentativa == _esperas.Length)
                 {
                     logger.LogError(ex, "Falha transitória persistiu após {Tentativas} tentativas. Canal={Canal}", tentativa + 1, canal.Endereco);
+                    // Os identificadores vêm da leitura tolerante do corpo, para a DLQ e o runbook levarem a referência.
+                    var leitura = LeitorMensagemSaga.Ler(canal, corpo);
                     return new ResultadoProcessamento(StatusProcessamento.Rejeitada,
-                        $"Falha transitória após {tentativa + 1} tentativas: {ex.GetType().Name}.", null, null, null);
+                        $"Falha transitória após {tentativa + 1} tentativas: {ex.GetType().Name}.", leitura.MessageId, leitura.CorrelationId, leitura.MessageType);
                 }
 
                 logger.LogWarning(ex, "Falha ao processar mensagem; nova tentativa em {Espera}s. Canal={Canal}",
