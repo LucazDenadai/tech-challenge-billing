@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OficinaMecanica.Billing.Application.UseCases.Mensageria;
@@ -236,5 +237,72 @@ public class PagamentosApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, (await _factory.Funcionario("Admin").PostAsJsonAsync(rota, new { status = "pago" })).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await _factory.Funcionario("Admin").PostAsJsonAsync("/billing/simulador/pagamentos/000/status", new { status = "approved" })).StatusCode);
+    }
+
+    // ── Bordas (CARD-44) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WebhookSoComCorpo_UsaOIdNumericoEOTipoDoCorpo()
+    {
+        var requestId = Guid.NewGuid().ToString();
+        var assinatura = ValidadorAssinaturaMercadoPago.Assinar(BillingApiFactory.SegredoWebhook, "987654", requestId, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var requisicao = new HttpRequestMessage(HttpMethod.Post, Webhook)
+        {
+            Content = new StringContent("""{"action":true,"type":"payment","data":{"id":987654}}""", Encoding.UTF8, "application/json")
+        };
+        requisicao.Headers.Add("x-request-id", requestId);
+        requisicao.Headers.Add("x-signature", assinatura);
+
+        Assert.Equal(HttpStatusCode.OK, (await _factory.CreateClient().SendAsync(requisicao)).StatusCode);
+
+        await using var db = PostgresFixture.CriarContexto(_factory.ConnectionString);
+        var notificacao = await db.NotificacoesPagamento.SingleAsync();
+        Assert.Equal("987654", notificacao.ReferenciaRecurso);
+        Assert.Null(notificacao.Acao);
+        Assert.Equal(ResultadoNotificacao.Desconhecido, notificacao.Resultado);
+    }
+
+    [Theory]
+    [InlineData("não é json")]
+    [InlineData("""{"data":"sem objeto","type":5}""")]
+    public async Task WebhookComCorpoInutil_UsaSoAQuery(string corpo)
+    {
+        var requisicao = NotificacaoAssinada("555");
+        requisicao.Content = new StringContent(corpo, Encoding.UTF8, "application/json");
+
+        Assert.Equal(HttpStatusCode.OK, (await _factory.CreateClient().SendAsync(requisicao)).StatusCode);
+
+        await using var db = PostgresFixture.CriarContexto(_factory.ConnectionString);
+        Assert.Equal("555", (await db.NotificacoesPagamento.SingleAsync()).ReferenciaRecurso);
+    }
+
+    [Fact]
+    public async Task ClienteSemIdNoToken_NaoVePagamentos()
+        => Assert.Equal(HttpStatusCode.Forbidden, (await _factory.ClienteSemId().GetAsync("/billing/pagamentos/meus")).StatusCode);
+
+    [Fact]
+    public async Task Simulador_ForaDoModoSimulado_NaoExiste()
+    {
+        using var comMercadoPago = _factory.WithWebHostBuilder(b => b
+            .UseSetting("MercadoPago:Modo", "MercadoPago")
+            .UseSetting("MercadoPago:AccessToken", "TEST-token-ficticio"));
+        var http = comMercadoPago.CreateClient();
+        http.DefaultRequestHeaders.Authorization = _factory.Funcionario("Admin").DefaultRequestHeaders.Authorization;
+
+        var resposta = await http.PostAsJsonAsync("/billing/simulador/pagamentos/123/status", new { status = "approved" });
+
+        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+    }
+
+    [Fact]
+    public async Task Resposta_DevolveCorrelationIdRecebido()
+    {
+        var correlationId = Guid.NewGuid().ToString();
+        var http = _factory.Funcionario("Admin");
+        http.DefaultRequestHeaders.Add("X-Correlation-Id", correlationId);
+
+        var resposta = await http.GetAsync($"/billing/pagamentos/os/{Guid.NewGuid()}");
+
+        Assert.Equal(correlationId, resposta.Headers.GetValues("X-Correlation-Id").Single());
     }
 }

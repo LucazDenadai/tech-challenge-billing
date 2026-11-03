@@ -242,4 +242,13 @@ public class OrcamentosApiTests : IAsyncLifetime
         if (Environment.GetEnvironmentVariable("EXPORTAR_OPENAPI") is { Length: > 0 } caminho)
             await File.WriteAllTextAsync(caminho, JsonSerializer.Serialize(swagger, new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     }
+
+    [Fact]
+    public async Task ClienteSemIdNoToken_NaoVeOrcamentos()
+    {
+        var cliente = _factory.ClienteSemId();
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync("/billing/orcamentos/meus")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await cliente.GetAsync($"/billing/orcamentos/{Guid.NewGuid()}")).StatusCode);
+    }
 }
