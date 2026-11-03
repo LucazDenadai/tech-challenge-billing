@@ -1,3 +1,5 @@
+using OficinaMecanica.Billing.Application.Ports.Out;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using OficinaMecanica.Billing.Application.UseCases.Mensageria;
 using OficinaMecanica.Billing.Application.UseCases.Orcamentos;
@@ -155,5 +157,62 @@ public class PagamentoPersistenciaTests(PostgresFixture fixture)
         pagamento!.MarcarParaAcaoManual("Teste.");
         await db.SaveChangesAsync();
         Assert.Empty(await repositorio.ListarParaVerificarAsync(agora.AddMinutes(3), 10));
+    }
+
+    // Outra réplica reconcilia o mesmo pagamento entre a leitura e o SaveChanges desta notificação.
+    private sealed class PagamentosComCorrida(PagamentoRepository real, Func<Task> concorrente) : IPagamentoRepository
+    {
+        private bool _correu;
+
+        public async Task<Pagamento?> ObterPorIdAsync(Guid id, CancellationToken ct = default)
+        {
+            var pagamento = await real.ObterPorIdAsync(id, ct);
+            if (!_correu)
+            {
+                _correu = true;
+                await concorrente();
+            }
+            return pagamento;
+        }
+
+        public Task AdicionarAsync(Pagamento entidade, CancellationToken ct = default) => real.AdicionarAsync(entidade, ct);
+        public Task<Pagamento?> ObterPorIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct = default) => real.ObterPorIdempotencyKeyAsync(idempotencyKey, ct);
+        public Task<Pagamento?> ObterPorOrcamentoAsync(Guid quoteId, int quoteVersion, CancellationToken ct = default) => real.ObterPorOrcamentoAsync(quoteId, quoteVersion, ct);
+        public Task<IReadOnlyList<Pagamento>> ListarPorClienteAsync(Guid clienteId, CancellationToken ct = default) => real.ListarPorClienteAsync(clienteId, ct);
+        public Task<IReadOnlyList<Pagamento>> ListarPorOsAsync(Guid osId, CancellationToken ct = default) => real.ListarPorOsAsync(osId, ct);
+        public Task<IReadOnlyList<Guid>> ListarParaVerificarAsync(DateTimeOffset agora, int limite, CancellationToken ct = default)
+            => real.ListarParaVerificarAsync(agora, limite, ct);
+    }
+
+    [Fact]
+    public async Task NotificacaoQuePerdeACorrida_ReleENaoDuplicaOEvento()
+    {
+        var o = await OrcamentoAprovadoAsync();
+        var provedor = new ProvedorDeTeste();
+        await CobrarAsync(o, provedor);
+        Guid pagamentoId;
+        string referencia;
+        await using (var db = PostgresFixture.CriarContexto(o.Conexao))
+        {
+            var pagamento = await db.Pagamentos.SingleAsync();
+            (pagamentoId, referencia) = (pagamento.Id, pagamento.ReferenciaProvedor!);
+        }
+        provedor.Aprovar(referencia);
+
+        await using var contexto = PostgresFixture.CriarContexto(o.Conexao);
+        var pagamentos = new PagamentosComCorrida(new PagamentoRepository(contexto), async () =>
+        {
+            await using var outro = PostgresFixture.CriarContexto(o.Conexao);
+            await Montagem.Reconciliar(outro, provedor).ConsultarAsync(pagamentoId);
+        });
+        var reconciliar = new ReconciliarPagamentoUseCase(pagamentos, new NotificacaoPagamentoRepository(contexto), provedor, new OutboxRepository(contexto),
+            new UnidadeDeTrabalho(contexto), Montagem.ConfiguracaoPagamento, TimeProvider.System, NullLogger<ReconciliarPagamentoUseCase>.Instance);
+
+        var resultado = await reconciliar.NotificacaoAsync(new NotificacaoRecebida("req-corrida", referencia, "payment.updated"));
+
+        Assert.Equal(ResultadoNotificacao.SemMudanca, resultado);
+        await using var leitura = PostgresFixture.CriarContexto(o.Conexao);
+        Assert.Equal(1, await leitura.Outbox.CountAsync(m => m.MessageType == "PaymentApproved.v1"));
+        Assert.Equal(1, await leitura.NotificacoesPagamento.CountAsync());
     }
 }

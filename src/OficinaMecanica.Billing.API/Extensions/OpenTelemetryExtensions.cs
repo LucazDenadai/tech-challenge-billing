@@ -13,7 +13,9 @@ public static class OpenTelemetryExtensions
     public static IHostApplicationBuilder AddOpenTelemetry(
         this IHostApplicationBuilder builder, string serviceName)
     {
-        var jaegerEndpoint = builder.Configuration["Jaeger:Endpoint"] ?? "http://jaeger:4318";
+        // O appsettings.json sempre traz o endpoint; Kubernetes e Compose o sobrescrevem (CARD-44).
+        var jaegerEndpoint = builder.Configuration["Jaeger:Endpoint"]
+            ?? throw new InvalidOperationException("Jaeger:Endpoint não configurado.");
         // Versão da imagem (sha-<commit>), gravada no build; "local" fora do CI.
         var versao = builder.Configuration["Servico:Versao"] ?? "local";
 

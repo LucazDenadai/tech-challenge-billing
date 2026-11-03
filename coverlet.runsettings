@@ -11,7 +11,7 @@
           <ExcludeByFile>**/Migrations/*.cs,**/Program.cs,**/*.g.cs</ExcludeByFile>
           <Exclude>[*.UnitTests]*,[*.IntegrationTests]*</Exclude>
           <!-- [ExcludeFromCodeCoverage] marca construtores do EF Core e modelos de tabela. -->
-          <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+          <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCodeAttribute</ExcludeByAttribute>
         </Configuration>
       </DataCollector>
     </DataCollectors>

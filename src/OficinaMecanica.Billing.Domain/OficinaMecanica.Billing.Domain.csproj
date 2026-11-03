@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Os testes exercitam as guardas internas da versão do orçamento (CARD-44). -->
+    <InternalsVisibleTo Include="OficinaMecanica.Billing.UnitTests" />
+  </ItemGroup>
+
 </Project>

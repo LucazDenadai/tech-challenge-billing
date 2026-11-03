@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using OficinaMecanica.Billing.Application.Contratos.Saga;
 using OficinaMecanica.Billing.Application.Exceptions;
@@ -168,5 +169,55 @@ public class OrcamentoPersistenciaTests(PostgresFixture fixture)
     private sealed class OutboxQueFalha : IOutbox
     {
         public void Adicionar(MensagemSaga mensagem) => throw new InvalidOperationException("Falha simulada na outbox.");
+    }
+
+    // Outra decisão grava entre a leitura e o SaveChanges desta: a corrida acontece sempre, sem depender de agendamento.
+    private sealed class OrcamentosComCorrida(OrcamentoRepository real, Func<Task> concorrente) : IOrcamentoRepository
+    {
+        private bool _correu;
+
+        public async Task<Orcamento?> ObterPorIdAsync(Guid id, CancellationToken ct = default)
+        {
+            var orcamento = await real.ObterPorIdAsync(id, ct);
+            if (!_correu)
+            {
+                _correu = true;
+                await concorrente();
+            }
+            return orcamento;
+        }
+
+        public Task AdicionarAsync(Orcamento entidade, CancellationToken ct = default) => real.AdicionarAsync(entidade, ct);
+        public Task<Orcamento?> ObterPorOsAsync(Guid osId, CancellationToken ct = default) => real.ObterPorOsAsync(osId, ct);
+        public Task<IReadOnlyList<Orcamento>> ListarPorClienteAsync(Guid clienteId, CancellationToken ct = default) => real.ListarPorClienteAsync(clienteId, ct);
+        public Task<IReadOnlyList<Orcamento>> ListarComVersaoVencidaAsync(DateTimeOffset agora, int limite, CancellationToken ct = default)
+            => real.ListarComVersaoVencidaAsync(agora, limite, ct);
+    }
+
+    [Fact]
+    public async Task DecisaoQuePerdeACorrida_ReleERespondeConformeOGravado()
+    {
+        var conexao = await fixture.NovoBancoMigradoAsync();
+        var clienteId = Guid.NewGuid();
+        await using (var db = PostgresFixture.CriarContexto(conexao))
+            await Montagem.Processar(db).ExecutarAsync(Montagem.CanalPedido, Montagem.Bytes(Montagem.Pedido(clienteId: clienteId)));
+        Guid quoteId;
+        await using (var db = PostgresFixture.CriarContexto(conexao))
+            quoteId = (await db.Orcamentos.SingleAsync()).Id;
+
+        await using var contexto = PostgresFixture.CriarContexto(conexao);
+        var orcamentos = new OrcamentosComCorrida(new OrcamentoRepository(contexto), async () =>
+        {
+            await using var outro = PostgresFixture.CriarContexto(conexao);
+            await Montagem.Decidir(outro).ExecutarAsync(new DecidirOrcamentoCommand(quoteId, 1, ResultadoDecisao.Aprovado, clienteId, null));
+        });
+        var decidir = new DecidirOrcamentoUseCase(orcamentos, new OutboxRepository(contexto), new UnidadeDeTrabalho(contexto), TimeProvider.System,
+            NullLogger<DecidirOrcamentoUseCase>.Instance);
+
+        var resultado = await decidir.ExecutarAsync(new DecidirOrcamentoCommand(quoteId, 1, ResultadoDecisao.Recusado, clienteId, null));
+
+        Assert.Equal(StatusTentativaDecisao.DecisaoConflitante, resultado.Status);
+        await using var leitura = PostgresFixture.CriarContexto(conexao);
+        Assert.Equal(1, await leitura.Outbox.CountAsync(m => m.MessageType == "QuoteApproved.v1" || m.MessageType == "QuoteDeclined.v1"));
     }
 }

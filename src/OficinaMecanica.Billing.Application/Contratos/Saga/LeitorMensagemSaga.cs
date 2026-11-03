@@ -49,18 +49,16 @@ public static class LeitorMensagemSaga
             if (messageType != canal.MessageType)
                 return Falha($"messageType '{messageType}' não corresponde ao canal '{canal.Endereco}' (esperado '{canal.MessageType}').");
 
-            MensagemSaga? mensagem;
+            MensagemSaga mensagem;
             try
             {
-                mensagem = (MensagemSaga?)raiz.Deserialize(canal.TipoMensagem, _opcoes);
+                // A raiz é um objeto (verificado acima): a desserialização nunca devolve null.
+                mensagem = (MensagemSaga)raiz.Deserialize(canal.TipoMensagem, _opcoes)!;
             }
             catch (JsonException ex)
             {
                 return Falha($"Payload fora do contrato {canal.MessageType}: {ex.Message}");
             }
-
-            if (mensagem is null)
-                return Falha("Payload vazio.");
 
             if (mensagem.SchemaVersion != canal.SchemaVersion)
                 return Falha($"schemaVersion {mensagem.SchemaVersion} não suportado no canal '{canal.Endereco}' (esperado {canal.SchemaVersion}).");
