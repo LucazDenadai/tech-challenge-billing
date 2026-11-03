@@ -254,6 +254,17 @@ public class ProvedorMercadoPagoTests
     }
 
     [Fact]
+    public async Task RespostaSemDadosDaTransacao_SemCodigoPix()
+    {
+        _respostas.Enfileirar(HttpStatusCode.OK, """{ "id": 78, "external_reference": "x", "transaction_amount": 10, "status": "pending", "point_of_interaction": {} }""");
+
+        var resultado = await Provedor().ObterAsync("78");
+
+        Assert.Null(resultado.Valor!.CodigoPix);
+        Assert.Null(resultado.Valor.UrlPagamento);
+    }
+
+    [Fact]
     public async Task RespostaNula_SucessoSemPagamento()
     {
         _respostas.Enfileirar(HttpStatusCode.OK, "null");

@@ -567,4 +567,30 @@ public class PagamentoUseCasesTests
         Assert.True(pagamento.ReconciliacaoManual);
         Assert.Equal(StatusPagamento.Aprovado, pagamento.Status);
     }
+
+    [Fact]
+    public async Task ConsultaPeriodicaComFalhaTecnica_NaoMudaOEstadoEReagenda()
+    {
+        var pagamento = await PagamentoPendente();
+        var antes = pagamento.ProximaVerificacaoEm;
+        _m.Provedor.FalhasConsulta.Enqueue("HTTP 503.");
+
+        await _m.Reconciliar.ConsultarAsync(pagamento.Id);
+
+        Assert.Equal(StatusPagamento.Pendente, pagamento.Status);
+        Assert.False(pagamento.ReconciliacaoManual);
+        Assert.True(pagamento.ProximaVerificacaoEm >= antes);
+        Assert.Empty(Publicadas<PaymentDeclined>());
+    }
+
+    [Fact]
+    public async Task PedidoRepetidoDepoisDaAprovacao_RepublicaAAprovacao()
+    {
+        await PagamentoAprovado();
+
+        await Processar(CanalCobranca, PedidoCobranca());
+
+        Assert.Equal(2, Publicadas<PaymentApproved>().Count());
+        Assert.Single(_m.Provedor.Criacoes);
+    }
 }
