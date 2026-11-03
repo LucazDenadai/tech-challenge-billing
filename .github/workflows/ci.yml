@@ -48,7 +48,7 @@ jobs:
             /d:sonar.token="$SONAR_TOKEN" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.cs.opencover.reportsPaths="cobertura/**/coverage.opencover.xml" \
-            /d:sonar.exclusions="**/Migrations/**,**/bin/**,**/obj/**,e2e/**" \
+            /d:sonar.exclusions="**/Migrations/**,**/bin/**,**/obj/**,e2e/**,cobertura/**,relatorio-cobertura/**" \
             /d:sonar.coverage.exclusions="**/Program.cs,**/Migrations/**,**/*.g.cs"
 
       - name: Avisar que o SonarCloud não está configurado
@@ -154,15 +154,17 @@ jobs:
           repository: LucazDenadai/tech-challenge-infra-k8s
           path: plataforma
 
-      - uses: helm/kind-action@v1
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
           cluster_name: oficina
           config: plataforma/kind/cluster.yaml
 
       - name: Imagem do serviço
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
             imagem=ghcr.io/lucazdenadai/tech-challenge-billing
             tag=sha-${{ github.sha }}
             docker pull "$imagem:$tag"
