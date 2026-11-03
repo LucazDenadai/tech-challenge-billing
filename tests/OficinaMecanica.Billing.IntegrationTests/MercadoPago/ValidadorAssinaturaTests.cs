@@ -67,4 +67,12 @@ public class ValidadorAssinaturaTests
     [InlineData("qualquer coisa")]
     public void CabecalhoMalformado_Malformada(string cabecalho)
         => Assert.Equal(ResultadoAssinatura.Malformada, Validador().Validar(cabecalho, RequestId, "12345abc"));
+
+    [Fact]
+    public void TimestampEmMilissegundos_LidoComoMilissegundos()
+    {
+        var assinatura = ValidadorAssinaturaMercadoPago.Assinar(Segredo, "12345abc", RequestId, Ts * 1000);
+
+        Assert.Equal(ResultadoAssinatura.Valida, Validador().Validar(assinatura, RequestId, "12345abc"));
+    }
 }

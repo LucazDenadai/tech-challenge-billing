@@ -16,12 +16,13 @@ public class ProvedorMercadoPagoTests
 
     private readonly RespostasGravadas _respostas = new();
 
-    private ProvedorMercadoPago Provedor(int tentativas = 3, int timeoutSegundos = 10)
+    private ProvedorMercadoPago Provedor(int tentativas = 3, int timeoutSegundos = 10, string? urlNotificacao = null)
     {
         var opcoes = new MercadoPagoOptions
         {
             Modo = ModoProvedor.MercadoPago, AccessToken = Token, WebhookSecret = "s",
-            BaseUrl = "https://api.mercadopago.test", TentativasPorChamada = tentativas, TimeoutSegundos = timeoutSegundos
+            BaseUrl = "https://api.mercadopago.test", TentativasPorChamada = tentativas, TimeoutSegundos = timeoutSegundos,
+            UrlNotificacao = urlNotificacao ?? string.Empty
         };
         var http = new HttpClient(_respostas);
         ProvedorMercadoPago.Configurar(http, opcoes);
@@ -222,6 +223,88 @@ public class ProvedorMercadoPagoTests
         Assert.Equal(StatusNoProvedor.Estornado, (await simulado.ObterAsync(primeira.Valor.Referencia)).Valor!.Status);
     }
 
+    // ── Bordas (CARD-44) ──────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("approved", StatusEstornoNoProvedor.Aprovado)]
+    [InlineData("rejected", StatusEstornoNoProvedor.Recusado)]
+    [InlineData("cancelled", StatusEstornoNoProvedor.Recusado)]
+    [InlineData("in_process", StatusEstornoNoProvedor.Pendente)]
+    [InlineData(null, StatusEstornoNoProvedor.Pendente)]
+    public void MapeamentoDeEstorno(string? status, StatusEstornoNoProvedor esperado) => Assert.Equal(esperado, ProvedorMercadoPago.MapearEstorno(status));
+
+    [Fact]
+    public async Task EstornoSemStatus_FicaPendenteComoDesconhecido()
+    {
+        _respostas.Enfileirar(HttpStatusCode.Created, """{ "id": 4568, "status": null }""");
+
+        var resultado = await Provedor().EstornarAsync("1325734520", 10m, "estorno-y");
+
+        Assert.Equal(new EstornoNoProvedor("4568", StatusEstornoNoProvedor.Pendente, "desconhecido"), resultado.Valor);
+    }
+
+    [Fact]
+    public async Task RespostaSemCamposOpcionais_MapeadaComPadroes()
+    {
+        _respostas.Enfileirar(HttpStatusCode.OK, """{ "id": 77, "external_reference": "x", "transaction_amount": 10 }""");
+
+        var resultado = await Provedor().ObterAsync("77");
+
+        Assert.Equal(new PagamentoNoProvedor("77", "x", 10m, string.Empty, StatusNoProvedor.ForaDoFluxo, "desconhecido", null, null, null), resultado.Valor);
+    }
+
+    [Fact]
+    public async Task RespostaNula_SucessoSemPagamento()
+    {
+        _respostas.Enfileirar(HttpStatusCode.OK, "null");
+
+        var resultado = await Provedor().ObterAsync("77");
+
+        Assert.True(resultado.Ok);
+        Assert.Null(resultado.Valor);
+    }
+
+    [Fact]
+    public async Task RedeFora_FalhaTecnicaDepoisDasTentativas()
+    {
+        _respostas.RedeFora = true;
+
+        var resultado = await Provedor(tentativas: 2).ObterAsync("77");
+
+        Assert.False(resultado.Ok);
+        Assert.Equal("Erro de rede: HttpRequestException.", resultado.Falha);
+        Assert.Equal(2, _respostas.Recebidas.Count);
+    }
+
+    [Fact]
+    public async Task Criar_ComUrlDeNotificacao_EnviaNoCorpo()
+    {
+        var id = Guid.NewGuid();
+        _respostas.Enfileirar(HttpStatusCode.Created, PagamentoJson(id));
+
+        await Provedor(urlNotificacao: "https://billing.exemplo/billing/pagamentos/webhook/mercadopago").CriarAsync(Cobranca(id));
+
+        Assert.Equal("https://billing.exemplo/billing/pagamentos/webhook/mercadopago",
+            JsonNode.Parse(_respostas.Recebidas.Single().Corpo!)!["notification_url"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Simulado_BuscaPeloPagamentoERecusa()
+    {
+        var simulado = new ProvedorPagamentoSimulado(TimeProvider.System);
+        var id = Guid.NewGuid();
+        var criado = (await simulado.CriarAsync(Cobranca(id))).Valor!;
+
+        Assert.Equal(criado.Referencia, (await simulado.BuscarPorPagamentoAsync(id)).Valor!.Referencia);
+        Assert.Null((await simulado.BuscarPorPagamentoAsync(Guid.NewGuid())).Valor);
+        Assert.False(simulado.DefinirStatus("inexistente", "approved"));
+
+        Assert.True(simulado.DefinirStatus(criado.Referencia, "rejected"));
+        var recusado = (await simulado.ObterAsync(criado.Referencia)).Valor!;
+        Assert.Equal(StatusNoProvedor.Recusado, recusado.Status);
+        Assert.Null(recusado.AprovadoEm);
+    }
+
     private sealed record Requisicao(HttpMethod Metodo, string Url, Dictionary<string, string> Cabecalhos, string? Corpo);
 
     // HttpMessageHandler que devolve respostas enfileiradas e guarda o que recebeu.
@@ -231,6 +314,7 @@ public class ProvedorMercadoPagoTests
 
         public List<Requisicao> Recebidas { get; } = [];
         public TimeSpan Atraso { get; set; }
+        public bool RedeFora { get; set; }
 
         public void Enfileirar(HttpStatusCode status, string corpo) => _fila.Enqueue((status, corpo));
 
@@ -240,6 +324,8 @@ public class ProvedorMercadoPagoTests
             var corpo = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
             Recebidas.Add(new Requisicao(request.Method, request.RequestUri!.ToString(), cabecalhos, corpo));
 
+            if (RedeFora)
+                throw new HttpRequestException("Conexão recusada.");
             if (Atraso > TimeSpan.Zero)
                 await Task.Delay(Atraso, cancellationToken);
 
