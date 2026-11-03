@@ -1,5 +1,7 @@
 # tech-challenge-billing
 
+[![CI](https://github.com/LucazDenadai/tech-challenge-billing/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LucazDenadai/tech-challenge-billing/actions/workflows/ci.yml)
+
 Serviço **Billing** da Fase 4 do Tech Challenge (oficina mecânica). É dono do **orçamento** da OS (versões, validade, aprovação e recusa, CARD-39a) e do **pagamento** Pix pelo Mercado Pago (cobrança, webhook, reconciliação e estorno, CARD-39b).
 
 Decisões e contratos ficam em [tech-challenge-docs](https://github.com/LucazDenadai/tech-challenge-docs): limites e ownership ([ADR-014](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-014-limites-microsservicos-fase4.md), [ADR-015](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-015-ownership-e-infraestrutura-fase4.md)), bancos ([ADR-016](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-016-bancos-sql-nosql-fase4.md)), Saga ([ADR-017](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-017-saga-orquestrada-os-fase4.md)) contratos assíncronos ([ADR-018](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-018-contratos-assincronos-asyncapi-fase4.md)) e Mercado Pago ([ADR-019](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-019-integracao-mercado-pago-fase4.md)). Escopo e decisões de implementação: [CARD-39](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-39-servico-billing-pagamentos.md), [CARD-39a](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-39a-orcamento-aprovacao.md) e [CARD-39b](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-39b-mercado-pago-webhook.md).
@@ -156,3 +158,58 @@ dotnet test tests/OficinaMecanica.Billing.IntegrationTests   # PostgreSQL e Rabb
 ```
 
 Com `EXPORTAR_OPENAPI=<caminho>` definido, o teste de Swagger grava o OpenAPI gerado (fonte de `docs/openapi/billing-v1.json`).
+
+## Saga: por que orquestrada
+
+Billing é participante da Saga orquestrada pelo OS ([ADR-017](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-017-saga-orquestrada-os-fase4.md)). Ele decide as regras de orçamento e pagamento e responde a comandos com eventos, mas não conhece a sequência das etapas nem chama outro serviço. A justificativa da orquestração (estado da OS em um lugar só, compensações explícitas, prazos e ação manual) está no [README do OS](https://github.com/LucazDenadai/tech-challenge-os#saga-por-que-orquestrada).
+
+## CI/CD
+
+O workflow [`CI`](.github/workflows/ci.yml) roda em cada pull request e em cada push na `main`, só com este repositório ([CARD-41a](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-41a-ci-por-servico.md), [CARD-41b](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-41b-kubernetes-por-servico.md)).
+
+| Job | O que faz | Quando |
+|---|---|---|
+| `build-e-testes` | Confere a cópia da spec AsyncAPI, build, testes unitários e de integração, relatório e **gate de cobertura** (linhas e branches ≥ 80%) | PR e `main` |
+| `imagem` | Publica `ghcr.io/lucazdenadai/tech-challenge-billing:sha-<commit>`. Nunca `latest`. | só `main` |
+| `deploy-kind` | Sobe um Kind no runner com a plataforma do `tech-challenge-infra-k8s`, aplica `k8s/` com a imagem do commit e falha se o rollout ou o `/billing/ready` não ficarem prontos | PR e `main` |
+
+A `main` é protegida: exige PR e o check `build-e-testes` verde, também para administradores.
+
+**SonarCloud:** o passo de análise existe no `build-e-testes` e roda quando os segredos `SONAR_TOKEN` e `SONAR_ORGANIZATION` estão no repositório. Sem eles, o job registra um aviso e o gate de cobertura continua bloqueando o merge.
+
+## Cobertura
+
+Último CI verde da `main` antes desta seção ([run 38494189545](https://github.com/LucazDenadai/tech-challenge-billing/actions/runs/38494189545), commit `ceb2ae2`, 2026-10-14):
+
+| Linhas | Branches | Mínimo |
+|---|---|---|
+| 94,7% | 81,9% | 80% nos dois |
+
+Cada run publica o relatório HTML do ReportGenerator no artefato `cobertura-tech-challenge-billing` e o resumo na página do run. Migrations, `Program.cs` e código gerado ficam fora da conta.
+
+## Executar no Kubernetes (Kind)
+
+Sem AWS na Fase 4: o Kubernetes é um Kind local ([ADR-021](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-021-kubernetes-local-sem-aws-fase4.md)). `k8s/` tem os manifests deste serviço (Deployment, Service, ConfigMap e o banco próprio), aplicados com Kustomize. RabbitMQ, observabilidade e segredos vêm do [`tech-challenge-infra-k8s`](https://github.com/LucazDenadai/tech-challenge-infra-k8s).
+
+```sh
+# tech-challenge-infra-k8s, tech-challenge-os, tech-challenge-billing e tech-challenge-operacoes lado a lado
+cd tech-challenge-infra-k8s
+./kind/subir.sh      # cluster, plataforma, observabilidade e os três serviços
+./kind/derrubar.sh   # apaga o cluster
+```
+
+Billing responde em `http://localhost:8091/billing/...` (Swagger em `/billing/swagger`).
+
+## Observabilidade
+
+As ferramentas da Fase 3 rodam no Kind, sem custo ([ADR-022](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/adr/ADR-022-observabilidade-fase4-stack-otel-local.md), [CARD-42](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-42-observabilidade-distribuida.md)).
+
+- **Traces:** OpenTelemetry para o Jaeger (`Jaeger__Endpoint`). O `traceparent` segue na mensagem, então comando e resposta ficam no mesmo trace. Os traces da mesma Saga se encontram pela tag `correlation_id`.
+- **Métricas:** `/metrics` no formato Prometheus.
+- **Logs:** JSON no stdout com `CorrelationId` e `TraceId`, coletados para o Loki.
+- **Grafana** (http://localhost:13000): dashboards **Saga da OS** e **Serviços**. Alertas com runbook no Prometheus (http://localhost:19090/alerts).
+
+## Swagger e Postman
+
+- Swagger em `/billing/swagger`; OpenAPI versionado em [`docs/openapi/`](docs/openapi/).
+- A collection da Fase 4 percorre a Saga nos três serviços: [`postman/`](https://github.com/LucazDenadai/tech-challenge-docs/tree/main/postman) do `tech-challenge-docs`, com o environment do Kind local.
