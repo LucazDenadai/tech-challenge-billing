@@ -102,8 +102,8 @@ public class ConsumidorSagaHostedService(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Desligamento: devolve à fila para outra instância ou para o próximo start.
-            await _canal!.BasicNackAsync(entrega.DeliveryTag, multiple: false, requeue: true);
+            // Desligamento: devolve à fila para outra instância ou para o próximo start, sem o ct, que já foi cancelado.
+            await _canal!.BasicNackAsync(entrega.DeliveryTag, multiple: false, requeue: true, CancellationToken.None);
             return;
         }
 
@@ -117,7 +117,8 @@ public class ConsumidorSagaHostedService(
             return;
         }
 
-        await _canal!.BasicAckAsync(entrega.DeliveryTag, multiple: false);
+        // O efeito já foi gravado: confirma mesmo durante o desligamento.
+        await _canal!.BasicAckAsync(entrega.DeliveryTag, multiple: false, CancellationToken.None);
     }
 
     private async Task<ResultadoProcessamento> ProcessarComRetentativasAsync(CanalConsumido canal, ReadOnlyMemory<byte> corpo, CancellationToken ct)
