@@ -175,17 +175,17 @@ O workflow [`CI`](.github/workflows/ci.yml) roda em cada pull request e em cada 
 
 A `main` é protegida: exige PR e o check `build-e-testes` verde, também para administradores.
 
-**SonarCloud:** o passo de análise existe no `build-e-testes` e roda quando os segredos `SONAR_TOKEN` e `SONAR_ORGANIZATION` estão no repositório. Sem eles, o job registra um aviso e o gate de cobertura continua bloqueando o merge.
+**SonarCloud:** a análise roda em cada PR e na `main` ([painel](https://sonarcloud.io/project/overview?id=LucazDenadai_tech-challenge-billing)). O gate de cobertura é a verificação que bloqueia o merge.
 
 ## Cobertura
 
-Último CI verde da `main` antes desta seção ([run 38494189545](https://github.com/LucazDenadai/tech-challenge-billing/actions/runs/38494189545), commit `ceb2ae2`, 2026-10-14):
+Último CI verde da `main` ([run 41654897626](https://github.com/LucazDenadai/tech-challenge-billing/actions/runs/41654897626), commit `e5a0934`, 2026-11-03):
 
 | Linhas | Branches | Mínimo |
 |---|---|---|
-| 94,7% | 81,9% | 80% nos dois |
+| 99,5% | 98,8% | 80% nos dois |
 
-Cada run publica o relatório HTML do ReportGenerator no artefato `cobertura-tech-challenge-billing` e o resumo na página do run. Migrations, `Program.cs` e código gerado ficam fora da conta.
+A conta inclui unitários e integração e mede os métodos `async` ([CARD-44](https://github.com/LucazDenadai/tech-challenge-docs/blob/main/cards/06-fase4-microsservicos-saga/CARD-44-qualidade-sonar-e-cobertura.md)). Ficam fora só migrations, `Program.cs` e código gerado. Cada run publica o relatório HTML do ReportGenerator no artefato `cobertura-tech-challenge-billing` e o resumo na página do run.
 
 ## Executar no Kubernetes (Kind)
 
