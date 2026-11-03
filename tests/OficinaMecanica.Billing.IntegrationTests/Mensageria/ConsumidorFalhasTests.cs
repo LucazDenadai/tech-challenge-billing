@@ -62,9 +62,9 @@ public class ConsumidorFalhasTests(PostgresFixture postgres) : IAsyncLifetime
         // Esperas de 1 s, 5 s e 10 s entre as tentativas.
         var dlq = await ReceberAsync(canal, $"billing.{PedidoReserva}.dlq", TimeSpan.FromSeconds(40));
         Assert.Contains("após 4 tentativas", Encoding.UTF8.GetString((byte[])dlq.BasicProperties.Headers!["x-motivo"]!));
-        // O corpo vai intacto para a DLQ; os cabeçalhos x-message-id e x-correlation-id ficam vazios neste caminho (CARD-44).
-        Assert.Equal(pedido["correlationId"]!.GetValue<string>(), JsonNode.Parse(dlq.Body.Span)!["correlationId"]!.GetValue<string>());
-        Assert.Null(dlq.BasicProperties.Headers!["x-correlation-id"]);
+        // Os cabeçalhos levam a referência da mensagem, lida do corpo (CARD-44).
+        Assert.Equal(pedido["correlationId"]!.GetValue<string>(), Encoding.UTF8.GetString((byte[])dlq.BasicProperties.Headers!["x-correlation-id"]!));
+        Assert.Equal(pedido["messageId"]!.GetValue<string>(), Encoding.UTF8.GetString((byte[])dlq.BasicProperties.Headers!["x-message-id"]!));
         Assert.Equal(4, _controle.Chamadas);
         await host.StopAsync();
     }
